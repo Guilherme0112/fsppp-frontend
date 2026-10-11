@@ -1,0 +1,6 @@
+{
+  "name": "Portal Modular & Gestão de Tarefas",
+  "description": "Sistema corporativo modular em React e MUI com autenticação, gestão de usuários e quadros Kanban dinâmicos personalizáveis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
