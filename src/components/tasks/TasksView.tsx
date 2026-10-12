@@ -14,11 +14,13 @@ import {
   Menu,
   MenuItem,
   Grid,
+  CircularProgress,
+  ClickAwayListener,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Close as CloseIcon,
-  Delete as DeleteIcon,
+  Edit as EditIcon,
   MoreHoriz as MoreIcon,
   ArrowBack as ArrowBackIcon,
   ViewKanban as BoardIcon,
@@ -36,6 +38,7 @@ export const TasksView: React.FC = () => {
   const {
     boards,
     addBoard,
+    editBoard,
     deleteBoard,
     addStatusToBoard,
     editStatus,
@@ -45,15 +48,37 @@ export const TasksView: React.FC = () => {
     editTask,
     moveTaskStatus,
     deleteTask,
+    isLoading,
+    isMutating,
+    activeBoardId,
+    setActiveBoardId,
+    activeBoard,
   } = useApp();
 
-  // Active selected board (null means showing the boards selection grid)
-  const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
+  if (isLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+        <CircularProgress color="primary" />
+      </Box>
+    );
+  }
 
   // Create Board Dialog
   const [boardDialogOpen, setBoardDialogOpen] = useState(false);
   const [newBoardTitle, setNewBoardTitle] = useState('');
   const [newBoardDesc, setNewBoardDesc] = useState('');
+
+  // Board 3-dots Menu & Rename Dialog state
+  const [boardMenuAnchor, setBoardMenuAnchor] = useState<null | HTMLElement>(null);
+  const [menuBoard, setMenuBoard] = useState<Board | null>(null);
+  const [renameBoardDialogOpen, setRenameBoardDialogOpen] = useState(false);
+  const [renamingBoard, setRenamingBoard] = useState<Board | null>(null);
+  const [renameBoardTitle, setRenameBoardTitle] = useState('');
+  const [renameBoardDesc, setRenameBoardDesc] = useState('');
+
+  // Column / Status 3-dots Menu state
+  const [statusMenuAnchor, setStatusMenuAnchor] = useState<null | HTMLElement>(null);
+  const [menuColumn, setMenuColumn] = useState<BoardColumn | null>(null);
 
   // Inline "Add List / Status" state
   const [isAddingList, setIsAddingList] = useState(false);
@@ -76,6 +101,7 @@ export const TasksView: React.FC = () => {
   const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [cardMenuAnchor, setCardMenuAnchor] = useState<null | HTMLElement>(null);
   const [moveMenuAnchor, setMoveMenuAnchor] = useState<null | HTMLElement>(null);
+  const [actionsSidebarOpen, setActionsSidebarOpen] = useState(true);
 
   const isDescEmpty = (html?: string) => {
     if (!html) return true;
@@ -86,8 +112,6 @@ export const TasksView: React.FC = () => {
   // Drag and Drop state
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverColId, setDragOverColId] = useState<string | null>(null);
-
-  const activeBoard: Board | undefined = boards.find((b) => b.id === selectedBoardId);
 
   // Board creation
   const handleSaveBoard = () => {
@@ -132,35 +156,193 @@ export const TasksView: React.FC = () => {
     setEditStatusDialogOpen(false);
   };
 
+  // Board actions (Rename & Archive)
+  const handleOpenRenameBoard = (board: Board) => {
+    setRenamingBoard(board);
+    setRenameBoardTitle(board.title);
+    setRenameBoardDesc(board.description || '');
+    setRenameBoardDialogOpen(true);
+    setBoardMenuAnchor(null);
+    setMenuBoard(null);
+  };
+
+  const handleCloseRenameBoard = () => {
+    setRenameBoardDialogOpen(false);
+    setRenamingBoard(null);
+    setRenameBoardTitle('');
+    setRenameBoardDesc('');
+  };
+
+  const handleSaveRenameBoard = async () => {
+    if (!renameBoardTitle.trim() || !renamingBoard) return;
+    await editBoard(renamingBoard.id, renameBoardTitle.trim(), renameBoardDesc.trim());
+    handleCloseRenameBoard();
+  };
+
+  const handleArchiveBoard = async () => {
+    if (!menuBoard) return;
+    const boardId = menuBoard.id;
+    setBoardMenuAnchor(null);
+    setMenuBoard(null);
+    await deleteBoard(boardId);
+    if (activeBoardId === boardId) {
+      setActiveBoardId('');
+    }
+  };
+
+  // Status actions (Edit & Archive)
+  const handleOpenEditStatus = () => {
+    if (!menuColumn) return;
+    setEditingCol(menuColumn);
+    setStatusTitle(menuColumn.title);
+    setEditStatusDialogOpen(true);
+    setStatusMenuAnchor(null);
+    setMenuColumn(null);
+  };
+
+  const handleArchiveStatus = async () => {
+    if (!menuColumn || !activeBoard) return;
+    const colId = menuColumn.id;
+    setStatusMenuAnchor(null);
+    setMenuColumn(null);
+    await deleteStatus(activeBoard.id, colId);
+  };
+
+  // Board 3-dots menu element (Only Rename and Archive)
+  const boardMenuElement = (
+    <Menu
+      anchorEl={boardMenuAnchor}
+      open={Boolean(boardMenuAnchor)}
+      onClose={() => {
+        setBoardMenuAnchor(null);
+        setMenuBoard(null);
+      }}
+      slotProps={{ paper: { sx: { borderRadius: 2, minWidth: 160 } } }}
+    >
+      <MenuItem
+        onClick={() => {
+          if (menuBoard) {
+            handleOpenRenameBoard(menuBoard);
+          }
+        }}
+      >
+        <EditIcon fontSize="small" sx={{ mr: 1.2, color: 'text.secondary' }} />
+        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+          Renomear
+        </Typography>
+      </MenuItem>
+      <MenuItem
+        onClick={handleArchiveBoard}
+        disabled={boards.length <= 1}
+        sx={{ color: 'error.main' }}
+      >
+        <ArchiveIcon fontSize="small" sx={{ mr: 1.2, color: 'error.main' }} />
+        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+          Arquivar
+        </Typography>
+      </MenuItem>
+    </Menu>
+  );
+
+  // Rename Board Dialog element
+  const renameBoardDialogElement = (
+    <Dialog
+      open={renameBoardDialogOpen}
+      onClose={handleCloseRenameBoard}
+      maxWidth="xs"
+      fullWidth
+    >
+      <DialogTitle sx={{ fontWeight: 800 }}>Renomear Quadro</DialogTitle>
+      <DialogContent dividers>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <TextField
+            label="Título do Quadro"
+            fullWidth
+            required
+            autoFocus
+            value={renameBoardTitle}
+            onChange={(e) => setRenameBoardTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSaveRenameBoard();
+              }
+            }}
+          />
+          <TextField
+            label="Descrição (Opcional)"
+            fullWidth
+            multiline
+            rows={2}
+            value={renameBoardDesc}
+            onChange={(e) => setRenameBoardDesc(e.target.value)}
+          />
+        </Box>
+      </DialogContent>
+      <DialogActions sx={{ p: 2 }}>
+        <Button onClick={handleCloseRenameBoard}>Cancelar</Button>
+        <Button
+          variant="contained"
+          onClick={handleSaveRenameBoard}
+          disabled={!renameBoardTitle.trim() || isMutating}
+          sx={{ bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }}
+        >
+          {isMutating ? 'Salvando...' : 'Salvar'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+
+  // Status / List 3-dots menu element (Only Edit and Archive)
+  const statusMenuElement = (
+    <Menu
+      anchorEl={statusMenuAnchor}
+      open={Boolean(statusMenuAnchor)}
+      onClose={() => {
+        setStatusMenuAnchor(null);
+        setMenuColumn(null);
+      }}
+      slotProps={{ paper: { sx: { borderRadius: 2, minWidth: 160 } } }}
+    >
+      <MenuItem onClick={handleOpenEditStatus}>
+        <EditIcon fontSize="small" sx={{ mr: 1.2, color: 'text.secondary' }} />
+        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+          Editar
+        </Typography>
+      </MenuItem>
+      <MenuItem
+        onClick={handleArchiveStatus}
+        disabled={Boolean(activeBoard && activeBoard.columns.length <= 1)}
+        sx={{ color: 'error.main' }}
+      >
+        <ArchiveIcon fontSize="small" sx={{ mr: 1.2, color: 'error.main' }} />
+        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+          Arquivar
+        </Typography>
+      </MenuItem>
+    </Menu>
+  );
+
   // Card Modal
   const handleOpenCardModal = (task: Task) => {
     setSelectedTask(task);
     setCardFormTitle(task.title);
     setCardFormDesc(task.description || '');
     setIsEditingDesc(false);
+    setActionsSidebarOpen(true);
     setCardModalOpen(true);
-  };
-
-  const handleSaveDescInline = () => {
-    if (!selectedTask) return;
-    editTask(selectedTask.id, { description: cardFormDesc });
-    setSelectedTask((prev) => (prev ? { ...prev, description: cardFormDesc } : null));
-    setIsEditingDesc(false);
-  };
-
-  const handleCancelDescInline = () => {
-    setCardFormDesc(selectedTask?.description || '');
-    setIsEditingDesc(false);
   };
 
   const handleSaveCardModal = () => {
     if (!cardFormTitle.trim() || !selectedTask) return;
+    const trimmedTitle = cardFormTitle.trim();
     editTask(selectedTask.id, {
-      title: cardFormTitle.trim(),
+      title: trimmedTitle,
       description: cardFormDesc,
     });
+    // Keep the local snapshot in sync so the save button hides when there are no pending changes
+    setSelectedTask({ ...selectedTask, title: trimmedTitle, description: cardFormDesc });
     setIsEditingDesc(false);
-    setCardModalOpen(false);
   };
 
   const handleDuplicateTask = () => {
@@ -241,11 +423,10 @@ export const TasksView: React.FC = () => {
 
         <Grid container spacing={2.5}>
           {boards.map((board) => {
-            const boardTasksCount = tasks.filter((t) => t.boardId === board.id).length;
             return (
               <Grid key={board.id} size={{ xs: 12, sm: 6, md: 4 }}>
                 <Card
-                  onClick={() => setSelectedBoardId(board.id)}
+                  onClick={() => setActiveBoardId(board.id)}
                   sx={{
                     p: 2.5,
                     borderRadius: 2.5,
@@ -275,36 +456,26 @@ export const TasksView: React.FC = () => {
                       >
                         <BoardIcon />
                       </Box>
-                      {boards.length > 1 && (
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteBoard(board.id);
-                          }}
-                          title="Excluir quadro"
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      )}
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setBoardMenuAnchor(e.currentTarget);
+                          setMenuBoard(board);
+                        }}
+                        title="Opções do quadro"
+                        sx={{ color: 'text.secondary', p: 0.5 }}
+                      >
+                        <MoreIcon fontSize="small" />
+                      </IconButton>
                     </Box>
 
                     <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5, fontSize: '1.05rem' }}>
                       {board.title}
                     </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, minHeight: 40 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0, minHeight: 40 }}>
                       {board.description || 'Quadro de gestão de tarefas e status.'}
                     </Typography>
-
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 1.5, borderTop: '1px solid #F1F5F9' }}>
-                      <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                        {board.columns.length} listas
-                      </Typography>
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main' }}>
-                        {boardTasksCount} {boardTasksCount === 1 ? 'tarefa' : 'tarefas'}
-                      </Typography>
-                    </Box>
                   </CardContent>
                 </Card>
               </Grid>
@@ -374,13 +545,16 @@ export const TasksView: React.FC = () => {
             <Button
               variant="contained"
               onClick={handleSaveBoard}
-              disabled={!newBoardTitle.trim()}
+              disabled={!newBoardTitle.trim() || isMutating}
               sx={{ bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }}
             >
-              Criar Quadro
+              {isMutating ? 'Criando...' : 'Criar Quadro'}
             </Button>
           </DialogActions>
         </Dialog>
+
+        {boardMenuElement}
+        {renameBoardDialogElement}
       </Box>
     );
   }
@@ -389,6 +563,11 @@ export const TasksView: React.FC = () => {
   // VIEW 2: SELECTED BOARD'S TASKS & LISTS (TRELLO VIEW)
   // ==========================================
   const boardTasks = tasks.filter((t) => t.boardId === activeBoard.id);
+
+  // Only show the save button when the title or description actually changed
+  const taskTitleChanged = cardFormTitle.trim() !== (selectedTask?.title || '').trim();
+  const taskDescChanged = cardFormDesc !== (selectedTask?.description || '');
+  const hasTaskChanges = Boolean(selectedTask) && (taskTitleChanged || taskDescChanged);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
@@ -410,7 +589,7 @@ export const TasksView: React.FC = () => {
             size="small"
             variant="outlined"
             startIcon={<ArrowBackIcon />}
-            onClick={() => setSelectedBoardId(null)}
+            onClick={() => setActiveBoardId('')}
             sx={{
               borderRadius: 2,
               borderColor: '#CBD5E1',
@@ -433,19 +612,23 @@ export const TasksView: React.FC = () => {
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Button
+          <IconButton
             size="small"
-            variant="text"
-            color="error"
-            startIcon={<DeleteIcon />}
-            onClick={() => {
-              deleteBoard(activeBoard.id);
-              setSelectedBoardId(null);
+            onClick={(e) => {
+              setBoardMenuAnchor(e.currentTarget);
+              setMenuBoard(activeBoard);
             }}
-            disabled={boards.length <= 1}
+            title="Opções do quadro"
+            sx={{
+              border: '1px solid #CBD5E1',
+              borderRadius: 2,
+              p: 0.8,
+              color: 'text.secondary',
+              '&:hover': { borderColor: 'primary.main', color: 'primary.main' },
+            }}
           >
-            Excluir Quadro
-          </Button>
+            <MoreIcon fontSize="small" />
+          </IconButton>
         </Box>
       </Box>
 
@@ -479,9 +662,9 @@ export const TasksView: React.FC = () => {
                 maxHeight: '100%',
                 display: 'flex',
                 flexDirection: 'column',
-                bgcolor: isDraggingOver ? '#FEE2E2' : '#F1F2F4',
+                bgcolor: isDraggingOver ? '#F9F1D0' : '#F1F2F4',
                 borderRadius: 2.5,
-                border: isDraggingOver ? '2px dashed #DC2626' : '1px solid #E2E8F0',
+                border: isDraggingOver ? '2px dashed #B8860B' : '1px solid #E2E8F0',
                 transition: 'background-color 0.15s ease, border 0.15s ease',
               }}
             >
@@ -517,8 +700,11 @@ export const TasksView: React.FC = () => {
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <IconButton
                     size="small"
-                    onClick={() => handleOpenEditList(column)}
-                    title="Editar lista"
+                    onClick={(e) => {
+                      setStatusMenuAnchor(e.currentTarget);
+                      setMenuColumn(column);
+                    }}
+                    title="Opções da lista"
                     sx={{ p: 0.5, color: '#626F86' }}
                   >
                     <MoreIcon fontSize="small" />
@@ -553,7 +739,7 @@ export const TasksView: React.FC = () => {
                       cursor: 'grab',
                       '&:hover': {
                         boxShadow: '0 2px 6px rgba(9, 30, 66, 0.2)',
-                        borderColor: '#DC2626',
+                        borderColor: '#B8860B',
                       },
                       '&:active': { cursor: 'grabbing' },
                     }}
@@ -597,10 +783,10 @@ export const TasksView: React.FC = () => {
                         size="small"
                         variant="contained"
                         onClick={() => handleCreateCardInline(column.id)}
-                        disabled={!newCardTitle.trim()}
+                        disabled={!newCardTitle.trim() || isMutating}
                         sx={{ bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }}
                       >
-                        Adicionar cartão
+                        {isMutating ? 'Adicionando...' : 'Adicionar cartão'}
                       </Button>
                       <IconButton size="small" onClick={() => setAddingCardColId(null)}>
                         <CloseIcon fontSize="small" />
@@ -661,10 +847,10 @@ export const TasksView: React.FC = () => {
                   size="small"
                   variant="contained"
                   onClick={handleCreateList}
-                  disabled={!newListTitle.trim()}
+                  disabled={!newListTitle.trim() || isMutating}
                   sx={{ bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }}
                 >
-                  Adicionar lista
+                  {isMutating ? 'Adicionando...' : 'Adicionar lista'}
                 </Button>
                 <IconButton size="small" onClick={() => setIsAddingList(false)}>
                   <CloseIcon fontSize="small" />
@@ -682,12 +868,12 @@ export const TasksView: React.FC = () => {
               sx={{
                 justifyContent: 'flex-start',
                 p: 1.5,
-                bgcolor: 'rgba(220, 38, 38, 0.06)',
+                bgcolor: 'rgba(184, 134, 11, 0.08)',
                 color: 'primary.main',
                 borderRadius: 2.5,
                 fontWeight: 700,
-                border: '1px dashed #DC2626',
-                '&:hover': { bgcolor: 'rgba(220, 38, 38, 0.12)' },
+                border: '1px dashed #B8860B',
+                '&:hover': { bgcolor: 'rgba(184, 134, 11, 0.14)' },
               }}
             >
               Adicionar outra lista
@@ -698,21 +884,8 @@ export const TasksView: React.FC = () => {
 
       {/* EDIT STATUS / LIST DIALOG */}
       <Dialog open={editStatusDialogOpen} onClose={() => setEditStatusDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 800, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Editar Lista / Status</span>
-          {editingCol && activeBoard.columns.length > 1 && (
-            <IconButton
-              size="small"
-              color="error"
-              onClick={() => {
-                deleteStatus(activeBoard.id, editingCol.id);
-                setEditStatusDialogOpen(false);
-              }}
-              title="Excluir esta lista"
-            >
-              <DeleteIcon fontSize="small" />
-            </IconButton>
-          )}
+        <DialogTitle sx={{ fontWeight: 800 }}>
+          Editar Lista / Status
         </DialogTitle>
         <DialogContent dividers>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
@@ -720,32 +893,27 @@ export const TasksView: React.FC = () => {
               label="Título da Lista"
               fullWidth
               required
+              autoFocus
               value={statusTitle}
               onChange={(e) => setStatusTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSaveEditList();
+                }
+              }}
             />
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          {editingCol && activeBoard.columns.length > 1 && (
-            <Button
-              color="error"
-              onClick={() => {
-                deleteStatus(activeBoard.id, editingCol.id);
-                setEditStatusDialogOpen(false);
-              }}
-              sx={{ mr: 'auto', fontWeight: 600 }}
-            >
-              Excluir Lista
-            </Button>
-          )}
           <Button onClick={() => setEditStatusDialogOpen(false)}>Cancelar</Button>
           <Button
             variant="contained"
             onClick={handleSaveEditList}
-            disabled={!statusTitle.trim()}
+            disabled={!statusTitle.trim() || isMutating}
             sx={{ bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }}
           >
-            Salvar
+            {isMutating ? 'Salvando...' : 'Salvar'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -954,55 +1122,30 @@ export const TasksView: React.FC = () => {
                     />
                   )
                 ) : (
-                  /* Quill Editor with Inline Salvar / Cancelar */
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  /* Quill Editor - use the single "Salvar Alterações" button in the footer to save */
+                  <Box>
                     <QuillEditor
                       value={cardFormDesc}
                       onChange={setCardFormDesc}
                       placeholder="Adicione uma descrição detalhada com tópicos, parágrafos, listas organizadas..."
                       minHeight={240}
                     />
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Button
-                        variant="contained"
-                        size="small"
-                        onClick={handleSaveDescInline}
-                        sx={{
-                          bgcolor: 'primary.main',
-                          '&:hover': { bgcolor: 'primary.dark' },
-                          fontWeight: 600,
-                          px: 2.5,
-                          py: 0.8,
-                          textTransform: 'none',
-                          borderRadius: 1.5,
-                        }}
-                      >
-                        Salvar
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={handleCancelDescInline}
-                        sx={{
-                          textTransform: 'none',
-                          fontWeight: 600,
-                          color: 'text.secondary',
-                          px: 2,
-                          py: 0.8,
-                          borderRadius: 1.5,
-                          '&:hover': { bgcolor: '#091E420F' },
-                        }}
-                      >
-                        Cancelar
-                      </Button>
-                    </Box>
                   </Box>
                 )}
               </Box>
             </Grid>
 
-            {/* SIDEBAR: APENAS AS AÇÕES */}
+            {/* SIDEBAR: APENAS AS AÇÕES (esconde ao clicar fora, reaparece ao clicar em "Ações") */}
             <Grid size={{ xs: 12, md: 3.5 }}>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {actionsSidebarOpen ? (
+                <ClickAwayListener
+                  onClickAway={(event) => {
+                    // Ignore clicks inside portaled MUI menus (ex: submenu "Mover")
+                    if ((event.target as HTMLElement | null)?.closest?.('.MuiMenu-paper')) return;
+                    setActionsSidebarOpen(false);
+                  }}
+                >
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Typography
                   variant="caption"
                   sx={{
@@ -1085,19 +1228,41 @@ export const TasksView: React.FC = () => {
                   onClick={handleArchiveTask}
                   sx={{
                     justifyContent: 'flex-start',
-                    bgcolor: '#FEE2E2',
-                    color: '#DC2626',
+                    bgcolor: '#F9F1D0',
+                    color: '#B8860B',
                     textTransform: 'none',
                     fontWeight: 600,
                     py: 1,
                     px: 1.5,
                     borderRadius: 1.5,
-                    '&:hover': { bgcolor: '#FECACA' },
+                    '&:hover': { bgcolor: '#F3E3A3' },
                   }}
                 >
                   Arquivar
                 </Button>
               </Box>
+                </ClickAwayListener>
+              ) : (
+                <Button
+                  fullWidth
+                  size="small"
+                  startIcon={<MoreIcon fontSize="small" />}
+                  onClick={() => setActionsSidebarOpen(true)}
+                  sx={{
+                    justifyContent: 'flex-start',
+                    bgcolor: '#091E420F',
+                    color: '#172B4D',
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    py: 1,
+                    px: 1.5,
+                    borderRadius: 1.5,
+                    '&:hover': { bgcolor: '#091E4224' },
+                  }}
+                >
+                  Ações
+                </Button>
+              )}
             </Grid>
           </Grid>
         </DialogContent>
@@ -1111,23 +1276,30 @@ export const TasksView: React.FC = () => {
           >
             Cancelar
           </Button>
-          <Button
-            variant="contained"
-            onClick={handleSaveCardModal}
-            disabled={!cardFormTitle.trim()}
-            sx={{
-              bgcolor: 'primary.main',
-              '&:hover': { bgcolor: 'primary.dark' },
-              px: 3.5,
-              py: 1,
-              fontWeight: 700,
-              borderRadius: 2,
-            }}
-          >
-            Salvar Alterações
-          </Button>
+          {hasTaskChanges && (
+            <Button
+              variant="contained"
+              onClick={handleSaveCardModal}
+              disabled={isMutating}
+              sx={{
+                bgcolor: 'primary.main',
+                '&:hover': { bgcolor: 'primary.dark' },
+                px: 3.5,
+                py: 1,
+                fontWeight: 700,
+                borderRadius: 2,
+              }}
+            >
+              {isMutating ? 'Salvando...' : 'Salvar Alterações'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
+
+      {/* Menus and Dialogs */}
+      {boardMenuElement}
+      {renameBoardDialogElement}
+      {statusMenuElement}
     </Box>
   );
 };

@@ -17,7 +17,6 @@ import {
 import {
   ViewKanban as TaskIcon,
   People as UsersIcon,
-  Settings as SettingsIcon,
   Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
@@ -39,8 +38,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         return <TaskIcon />;
       case 'users':
         return <UsersIcon />;
-      case 'settings':
-        return <SettingsIcon />;
       default:
         return <TaskIcon />;
     }
@@ -61,31 +58,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       >
         <Toolbar sx={{ justifyContent: 'space-between', px: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Box
-              sx={{
-                width: 32,
-                height: 32,
-                borderRadius: 1.5,
-                bgcolor: 'primary.main',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 800,
-                fontSize: '1rem',
-              }}
-            >
-              T
-            </Box>
-            <Typography variant="h6" sx={{ fontWeight: 800, color: 'text.primary', fontSize: '1.1rem' }}>
-              Gestão<span style={{ color: '#DC2626' }}>Red</span>
-            </Typography>
+              <div>
+                <img src="./public/icon-fsppp.png" width="120" />
+              </div>
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-              {currentUser?.name} ({currentUser?.role})
-            </Typography>
             <Button
               size="small"
               variant="outlined"

@@ -39,7 +39,7 @@ export const FormattedDescription: React.FC<FormattedDescriptionProps> = ({ cont
             '& li': {
               mb: 0.5,
               '&::marker': {
-                color: '#DC2626',
+                color: '#B8860B',
               },
             },
           },
@@ -50,7 +50,7 @@ export const FormattedDescription: React.FC<FormattedDescriptionProps> = ({ cont
             '& li': {
               mb: 0.5,
               '&::marker': {
-                color: '#DC2626',
+                color: '#B8860B',
                 fontWeight: 700,
               },
             },
@@ -62,13 +62,13 @@ export const FormattedDescription: React.FC<FormattedDescriptionProps> = ({ cont
             mb: 0.5,
           },
           '& blockquote': {
-            borderLeft: '3px solid #DC2626',
+            borderLeft: '3px solid #B8860B',
             pl: 1.5,
             py: 0.5,
             my: 1,
             color: '#64748B',
             fontStyle: 'italic',
-            bgcolor: '#FEF2F2',
+            bgcolor: '#F9F5EC',
             borderRadius: '0 6px 6px 0',
           },
           '& pre, & code': {

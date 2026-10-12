@@ -1,30 +1,30 @@
 import { createTheme } from '@mui/material/styles';
 
-export const redTheme = createTheme({
+export const goldTheme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#DC2626', // Red 600
-      light: '#EF4444', // Red 500
-      dark: '#B91C1C', // Red 700
+      main: '#B8860B',
+      light: '#D4AF37',
+      dark: '#8A6A1D',
       contrastText: '#FFFFFF',
     },
     secondary: {
-      main: '#991B1B', // Red 800
-      light: '#DC2626',
-      dark: '#7F1D1D',
+      main: '#5C3A15',
+      light: '#B8860B',
+      dark: '#3E2A0B',
       contrastText: '#FFFFFF',
     },
     background: {
-      default: '#F8FAFC',
-      paper: '#FFFFFF',
+      default: '#F9F5EC',
+      paper: '#FFFDF8',
     },
     text: {
-      primary: '#0F172A',
-      secondary: '#64748B',
+      primary: '#1F1A17',
+      secondary: '#6D5A43',
     },
     error: {
-      main: '#DC2626',
+      main: '#B42318',
     },
   },
   typography: {
@@ -50,8 +50,8 @@ export const redTheme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 10,
-          border: '1px solid #E2E8F0',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+          border: '1px solid #E9DDB5',
+          boxShadow: '0 1px 3px rgba(92, 58, 21, 0.08)',
         },
       },
     },

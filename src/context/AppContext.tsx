@@ -1,11 +1,21 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Board, Task, BoardColumn, AppModule } from '../types';
-import { INITIAL_USERS, INITIAL_BOARDS, INITIAL_TASKS } from '../data/initialData';
+import { useAuth } from './AuthContext';
+import {
+  useBoardsModule,
+  useStatusesModule,
+  useTasksModule,
+  useUsersModule,
+} from '../hooks/useApiHooks';
 
 interface AppContextType {
   activeModule: string;
   setActiveModule: (module: string) => void;
   modules: AppModule[];
+
+  // Loading & Mutating states
+  isLoading: boolean;
+  isMutating: boolean;
 
   // Users
   users: User[];
@@ -18,176 +28,169 @@ interface AppContextType {
   activeBoardId: string;
   setActiveBoardId: (id: string) => void;
   activeBoard: Board | undefined;
-  addBoard: (title: string, description: string) => void;
-  deleteBoard: (id: string) => void;
+  addBoard: (title: string, description: string) => Promise<void>;
+  editBoard: (id: string, title: string, description?: string) => Promise<void>;
+  deleteBoard: (id: string) => Promise<void>;
 
   // Statuses (Columns)
-  addStatusToBoard: (boardId: string, title: string, color: string) => void;
-  editStatus: (boardId: string, statusId: string, title: string, color: string) => void;
-  deleteStatus: (boardId: string, statusId: string) => void;
+  addStatusToBoard: (boardId: string, title: string, color: string) => Promise<void>;
+  editStatus: (boardId: string, statusId: string, title: string, color: string) => Promise<void>;
+  deleteStatus: (boardId: string, statusId: string) => Promise<void>;
 
   // Tasks
   tasks: Task[];
-  addTask: (task: Omit<Task, 'id'>) => void;
-  editTask: (id: string, updates: Partial<Task>) => void;
-  moveTaskStatus: (taskId: string, newColumnId: string) => void;
-  deleteTask: (id: string) => void;
+  addTask: (task: Omit<Task, 'id'>) => Promise<void>;
+  editTask: (id: string, updates: Partial<Task>) => Promise<void>;
+  moveTaskStatus: (taskId: string, newColumnId: string) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeModule, setActiveModule] = useState<string>('tasks');
+  const { isAuthenticated } = useAuth();
+  
+  // React client-side hash routing sync (#/tarefas and #/usuarios)
+  const [activeModule, setActiveModuleState] = useState<string>(() => {
+    const hash = window.location.hash.replace('#/', '');
+    if (hash === 'tarefas' || hash === 'tasks') return 'tasks';
+    if (hash === 'usuarios' || hash === 'users') return 'users';
+    return 'tasks';
+  });
 
-  // List of available modules (modular architecture ready to receive new modules)
+  useEffect(() => {
+    if (!window.location.hash) {
+      window.location.hash = '#/tarefas';
+    }
+
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#/', '');
+      if (hash === 'tarefas' || hash === 'tasks') {
+        setActiveModuleState('tasks');
+      } else if (hash === 'usuarios' || hash === 'users') {
+        setActiveModuleState('users');
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const setActiveModule = (mod: string) => {
+    setActiveModuleState(mod);
+    if (mod === 'tasks') {
+      window.location.hash = '#/tarefas';
+    } else if (mod === 'users') {
+      window.location.hash = '#/usuarios';
+    }
+  };
+
+  const [activeBoardId, setActiveBoardId] = useState<string>('');
+
+  // List of available modules
   const [modules] = useState<AppModule[]>([
     { id: 'tasks', name: 'Tarefas & Quadros', icon: 'ViewKanban' },
-    { id: 'users', name: 'Administração de Usuários', icon: 'People' },
-    { id: 'settings', name: 'Configurações', icon: 'Settings' },
+    { id: 'users', name: 'Usuários', icon: 'People' },
   ]);
 
-  // Users state
-  const [users, setUsers] = useState<User[]>(() => {
-    try {
-      const saved = localStorage.getItem('app_users');
-      return saved ? JSON.parse(saved) : INITIAL_USERS;
-    } catch {
-      return INITIAL_USERS;
-    }
-  });
+  // Hook per module, passing activeModule to control query enablement
+  const { boardsQuery, addBoardMutation, editBoardMutation, deleteBoardMutation } = useBoardsModule(isAuthenticated, activeModule);
+  const { statusesQuery, addStatusMutation, editStatusMutation, deleteStatusMutation } = useStatusesModule(activeBoardId, isAuthenticated, activeModule);
+  const { tasksQuery, addTaskMutation, editTaskMutation, deleteTaskMutation } = useTasksModule(activeBoardId, isAuthenticated, activeModule);
+  const { usersQuery, addUserMutation, editUserMutation, deleteUserMutation } = useUsersModule(isAuthenticated, activeModule);
 
-  // Boards state
-  const [boards, setBoards] = useState<Board[]>(() => {
-    try {
-      const saved = localStorage.getItem('app_boards');
-      return saved ? JSON.parse(saved) : INITIAL_BOARDS;
-    } catch {
-      return INITIAL_BOARDS;
-    }
-  });
+  const boards = boardsQuery.data || [];
+  const statuses = statusesQuery.data || [];
+  const tasks = tasksQuery.data || [];
+  const users = usersQuery.data || [];
 
-  const [activeBoardId, setActiveBoardId] = useState<string>(() => boards[0]?.id || 'b1');
+  // Attach active board columns to active board object
+  const activeBoardBase = boards.find((b) => b.id === activeBoardId);
+  const activeBoard: Board | undefined = activeBoardBase
+    ? {
+        ...activeBoardBase,
+        columns: statuses,
+      }
+    : undefined;
 
-  // Tasks state
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    try {
-      const saved = localStorage.getItem('app_tasks');
-      return saved ? JSON.parse(saved) : INITIAL_TASKS;
-    } catch {
-      return INITIAL_TASKS;
-    }
-  });
+  const isLoading =
+    boardsQuery.isLoading ||
+    usersQuery.isLoading ||
+    (Boolean(activeBoardId) && (statusesQuery.isLoading || tasksQuery.isLoading));
 
-  useEffect(() => {
-    localStorage.setItem('app_users', JSON.stringify(users));
-  }, [users]);
-
-  useEffect(() => {
-    localStorage.setItem('app_boards', JSON.stringify(boards));
-  }, [boards]);
-
-  useEffect(() => {
-    localStorage.setItem('app_tasks', JSON.stringify(tasks));
-  }, [tasks]);
-
-  const activeBoard = boards.find((b) => b.id === activeBoardId) || boards[0];
+  const isMutating =
+    addBoardMutation.isPending ||
+    editBoardMutation.isPending ||
+    deleteBoardMutation.isPending ||
+    addStatusMutation.isPending ||
+    editStatusMutation.isPending ||
+    deleteStatusMutation.isPending ||
+    addTaskMutation.isPending ||
+    editTaskMutation.isPending ||
+    deleteTaskMutation.isPending ||
+    addUserMutation.isPending ||
+    editUserMutation.isPending ||
+    deleteUserMutation.isPending;
 
   // User Actions
   const addUser = (userData: Omit<User, 'id'>) => {
-    const newUser: User = { ...userData, id: String(Date.now()) };
-    setUsers((prev) => [...prev, newUser]);
+    addUserMutation.mutate(userData);
   };
 
   const editUser = (id: string, updates: Partial<User>) => {
-    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...updates } : u)));
+    editUserMutation.mutate({ id, updates });
   };
 
   const deleteUser = (id: string) => {
-    setUsers((prev) => prev.filter((u) => u.id !== id));
+    deleteUserMutation.mutate(id);
   };
 
   // Board Actions
-  const addBoard = (title: string, description: string) => {
-    const newBoard: Board = {
-      id: `b-${Date.now()}`,
-      title,
-      description,
-      columns: [
-        { id: `c-${Date.now()}-1`, title: 'A Fazer', color: '#64748B' },
-        { id: `c-${Date.now()}-2`, title: 'Em Andamento', color: '#DC2626' },
-        { id: `c-${Date.now()}-3`, title: 'Concluído', color: '#16A34A' },
-      ],
-    };
-    setBoards((prev) => [...prev, newBoard]);
-    setActiveBoardId(newBoard.id);
+  const addBoard = async (title: string, description: string) => {
+    const created = await addBoardMutation.mutateAsync({ title, description });
+    if (created && created.id) {
+      setActiveBoardId(String(created.id));
+    }
   };
 
-  const deleteBoard = (id: string) => {
+  const editBoard = async (id: string, title: string, description?: string) => {
+    await editBoardMutation.mutateAsync({ id, title, description });
+  };
+
+  const deleteBoard = async (id: string) => {
     if (boards.length <= 1) return;
-    const remaining = boards.filter((b) => b.id !== id);
-    setBoards(remaining);
-    setActiveBoardId(remaining[0].id);
-    setTasks((prev) => prev.filter((t) => t.boardId !== id));
+    await deleteBoardMutation.mutateAsync(id);
+    setActiveBoardId('');
   };
 
   // Statuses (Columns) Actions
-  const addStatusToBoard = (boardId: string, title: string, color: string) => {
-    const newCol: BoardColumn = {
-      id: `col-${Date.now()}`,
-      title,
-      color: color || '#DC2626',
-    };
-    setBoards((prev) =>
-      prev.map((b) => (b.id === boardId ? { ...b, columns: [...b.columns, newCol] } : b))
-    );
+  const addStatusToBoard = async (boardId: string, title: string, color: string) => {
+    await addStatusMutation.mutateAsync({ boardId, title, color });
   };
 
-  const editStatus = (boardId: string, statusId: string, title: string, color: string) => {
-    setBoards((prev) =>
-      prev.map((b) => {
-        if (b.id !== boardId) return b;
-        return {
-          ...b,
-          columns: b.columns.map((col) => (col.id === statusId ? { ...col, title, color } : col)),
-        };
-      })
-    );
+  const editStatus = async (boardId: string, statusId: string, title: string, color: string) => {
+    await editStatusMutation.mutateAsync({ boardId, statusId, title, color });
   };
 
-  const deleteStatus = (boardId: string, statusId: string) => {
-    setBoards((prev) =>
-      prev.map((b) => {
-        if (b.id !== boardId || b.columns.length <= 1) return b;
-        const fallbackCol = b.columns.find((c) => c.id !== statusId);
-        if (fallbackCol) {
-          setTasks((tList) =>
-            tList.map((t) => (t.boardId === boardId && t.columnId === statusId ? { ...t, columnId: fallbackCol.id } : t))
-          );
-        }
-        return {
-          ...b,
-          columns: b.columns.filter((c) => c.id !== statusId),
-        };
-      })
-    );
+  const deleteStatus = async (boardId: string, statusId: string) => {
+    await deleteStatusMutation.mutateAsync({ boardId, statusId });
   };
 
   // Task Actions
-  const addTask = (taskData: Omit<Task, 'id'>) => {
-    const newTask: Task = { ...taskData, id: `t-${Date.now()}` };
-    setTasks((prev) => [...prev, newTask]);
+  const addTask = async (taskData: Omit<Task, 'id'>) => {
+    await addTaskMutation.mutateAsync(taskData);
   };
 
-  const editTask = (id: string, updates: Partial<Task>) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));
+  const editTask = async (id: string, updates: Partial<Task>) => {
+    await editTaskMutation.mutateAsync({ id, updates, currentTasks: tasks });
   };
 
-  const moveTaskStatus = (taskId: string, newColumnId: string) => {
-    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, columnId: newColumnId } : t)));
+  const moveTaskStatus = async (taskId: string, newColumnId: string) => {
+    await editTask(taskId, { columnId: newColumnId });
   };
 
-  const deleteTask = (id: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+  const deleteTask = async (id: string) => {
+    await deleteTaskMutation.mutateAsync(id);
   };
 
   return (
@@ -196,6 +199,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activeModule,
         setActiveModule,
         modules,
+        isLoading,
+        isMutating,
         users,
         addUser,
         editUser,
@@ -205,6 +210,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveBoardId,
         activeBoard,
         addBoard,
+        editBoard,
         deleteBoard,
         addStatusToBoard,
         editStatus,

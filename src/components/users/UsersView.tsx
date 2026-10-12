@@ -21,6 +21,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  CircularProgress,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -31,7 +32,7 @@ import { useApp } from '../../context/AppContext';
 import { User } from '../../types';
 
 export const UsersView: React.FC = () => {
-  const { users, addUser, editUser, deleteUser } = useApp();
+  const { users, addUser, editUser, deleteUser, isLoading } = useApp();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -71,7 +72,7 @@ export const UsersView: React.FC = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 800 }}>
-            Administração de Usuários
+            Usuários
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Gerencie os usuários e permissões do sistema
@@ -101,34 +102,48 @@ export const UsersView: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id} hover>
-                  <TableCell sx={{ fontWeight: 600 }}>{user.name}</TableCell>
-                  <TableCell color="text.secondary">{user.email}</TableCell>
-                  <TableCell>{user.role}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={user.status}
-                      size="small"
-                      color={user.status === 'Ativo' ? 'success' : 'default'}
-                      sx={{ fontWeight: 600, fontSize: '0.75rem' }}
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    <IconButton size="small" onClick={() => handleOpenEdit(user)} sx={{ color: 'text.secondary' }}>
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      color="error"
-                      onClick={() => deleteUser(user.id)}
-                      disabled={users.length <= 1}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
+                    <CircularProgress size={36} sx={{ color: 'primary.main' }} />
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : users.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} align="center" sx={{ py: 6, color: 'text.secondary' }}>
+                    Nenhum usuário cadastrado.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                users.map((user) => (
+                  <TableRow key={user.id} hover>
+                    <TableCell sx={{ fontWeight: 600 }}>{user.name}</TableCell>
+                    <TableCell color="text.secondary">{user.email}</TableCell>
+                    <TableCell>{user.role}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={user.status}
+                        size="small"
+                        color={user.status === 'Ativo' ? 'success' : 'default'}
+                        sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      <IconButton size="small" onClick={() => handleOpenEdit(user)} sx={{ color: 'text.secondary' }}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => deleteUser(user.id)}
+                        disabled={users.length <= 1}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </TableContainer>
