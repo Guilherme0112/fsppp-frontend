@@ -80,47 +80,33 @@ export function useBoardsModule(isAuthenticated: boolean, activeModule: string) 
   };
 }
 
-// 2. Statuses (Columns) Module Hook (Enabled ONLY when activeModule === 'tasks', authenticated, and boardId is present)
+// 2. Statuses (Columns) Module Hook — mutations only. Status data itself is derived from
+// useTasksModule's query, since GET /tarefas already returns each status alongside its tasks.
 export function useStatusesModule(boardId: string | undefined, isAuthenticated: boolean, activeModule: string) {
   const queryClient = useQueryClient();
 
-  const statusesQuery = useQuery({
-    queryKey: ['statuses', boardId],
-    queryFn: async () => {
-      if (!boardId) return [];
-      const res = await statusService.list(Number(boardId));
-      return res.map((s) => ({
-        id: String(s.id),
-        title: s.nome,
-        color: '#64748B',
-      }));
-    },
-    enabled: isAuthenticated && activeModule === 'tasks' && Boolean(boardId),
-    staleTime: Infinity,
-  });
-
   const addStatusMutation = useMutation({
-    mutationFn: async ({ boardId: bId, title, color }: { boardId: string; title: string; color: string }) => {
+    mutationFn: async ({ boardId: bId, title }: { boardId: string; title: string }) => {
       const numericBoardId = Number(bId);
       if (!isNaN(numericBoardId)) {
-        await statusService.create(numericBoardId, { nome: title, descricao: color });
+        await statusService.create(numericBoardId, { nome: title });
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['statuses', boardId] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
     },
   });
 
   const editStatusMutation = useMutation({
-    mutationFn: async ({ boardId: bId, statusId, title, color }: { boardId: string; statusId: string; title: string; color: string }) => {
+    mutationFn: async ({ boardId: bId, statusId, title }: { boardId: string; statusId: string; title: string }) => {
       const numericBoardId = Number(bId);
       const numericStatusId = Number(statusId);
       if (!isNaN(numericBoardId) && !isNaN(numericStatusId)) {
-        await statusService.update(numericBoardId, numericStatusId, { nome: title, descricao: color });
+        await statusService.update(numericBoardId, numericStatusId, { nome: title });
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['statuses', boardId] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
     },
   });
 
@@ -133,13 +119,11 @@ export function useStatusesModule(boardId: string | undefined, isAuthenticated: 
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['statuses', boardId] });
       queryClient.invalidateQueries({ queryKey: ['tasks', boardId] });
     },
   });
 
   return {
-    statusesQuery,
     addStatusMutation,
     editStatusMutation,
     deleteStatusMutation,
@@ -153,17 +137,24 @@ export function useTasksModule(boardId: string | undefined, isAuthenticated: boo
   const tasksQuery = useQuery({
     queryKey: ['tasks', boardId],
     queryFn: async () => {
-      if (!boardId) return [];
-      const res = await taskService.list();
-      return res
-        .filter((t) => String(t.quadro_id) === String(boardId))
-        .map((t) => ({
+      if (!boardId) return { tasks: [], statuses: [], columnHasMore: {} as Record<string, boolean> };
+      const res = await taskService.list(Number(boardId));
+      return {
+        tasks: res.tasks.map((t) => ({
           id: String(t.id),
           boardId: String(t.quadro_id),
           columnId: String(t.status_id),
           title: t.nome,
           description: t.descricao || '',
-        }));
+        })),
+        statuses: res.statuses.map((s) => ({
+          id: String(s.id),
+          title: s.nome,
+        })),
+        columnHasMore: Object.fromEntries(
+          res.pagination.map((p) => [String(p.statusId), p.currentPage < p.lastPage])
+        ) as Record<string, boolean>,
+      };
     },
     enabled: isAuthenticated && activeModule === 'tasks' && Boolean(boardId),
     staleTime: Infinity,

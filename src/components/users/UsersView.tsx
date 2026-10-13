@@ -30,6 +30,7 @@ import {
 } from '@mui/icons-material';
 import { useApp } from '../../context/AppContext';
 import { User } from '../../types';
+import { PageContainer } from '../common/PageContainer';
 
 export const UsersView: React.FC = () => {
   const { users, addUser, editUser, deleteUser, isLoading } = useApp();
@@ -67,7 +68,7 @@ export const UsersView: React.FC = () => {
   };
 
   return (
-    <Box sx={{ maxWidth: 1100, mx: 'auto' }}>
+    <PageContainer disableMaxWidth>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
@@ -197,6 +198,6 @@ export const UsersView: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </PageContainer>
   );
 };

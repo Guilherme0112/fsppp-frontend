@@ -13,6 +13,7 @@ import {
   ListItemText,
   Button,
   Avatar,
+  CircularProgress,
 } from '@mui/material';
 import {
   ViewKanban as TaskIcon,
@@ -30,7 +31,8 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const { currentUser, logout } = useAuth();
-  const { activeModule, setActiveModule, modules } = useApp();
+  const { activeModule, setActiveModule, modules, isLoading, isMutating } = useApp();
+  const isBusy = isLoading || isMutating;
 
   const getIcon = (id: string) => {
     switch (id) {
@@ -64,6 +66,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {isBusy && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <CircularProgress size={18} thickness={5} sx={{ color: 'primary.main' }} />
+                <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+                  Sincronizando...
+                </Typography>
+              </Box>
+            )}
             <Button
               size="small"
               variant="outlined"

@@ -38,12 +38,6 @@ export const boardService = {
 };
 
 export const statusService = {
-  list: async (quadroId: number): Promise<BackendStatus[]> => {
-    const res = await apiRequest<any>(`/status-quadro/${quadroId}`);
-    if (Array.isArray(res)) return res;
-    if (res && Array.isArray(res.data)) return res.data;
-    return [];
-  },
   create: (quadroId: number, data: { nome: string; descricao?: string | null }) =>
     apiRequest<BackendStatus>(`/status-quadro/${quadroId}`, {
       method: 'POST',

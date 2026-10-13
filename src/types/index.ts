@@ -9,7 +9,6 @@ export interface User {
 export interface BoardColumn {
   id: string;
   title: string;
-  color: string;
 }
 
 export interface Board {

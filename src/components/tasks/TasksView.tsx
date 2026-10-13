@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Typography,
@@ -32,7 +32,12 @@ import {
 } from '@mui/icons-material';
 import { useApp } from '../../context/AppContext';
 import { Task, BoardColumn, Board } from '../../types';
+import { taskService } from '../../services/taskService';
 import { QuillEditor } from '../common/QuillEditor';
+import { PageContainer } from '../common/PageContainer';
+
+const BOARDS_PAGE_SIZE = 9;
+const STATUS_PAGE_SIZE = 6;
 
 export const TasksView: React.FC = () => {
   const {
@@ -44,6 +49,7 @@ export const TasksView: React.FC = () => {
     editStatus,
     deleteStatus,
     tasks,
+    columnHasMore: columnHasMoreFromApi,
     addTask,
     editTask,
     moveTaskStatus,
@@ -55,18 +61,16 @@ export const TasksView: React.FC = () => {
     activeBoard,
   } = useApp();
 
-  if (isLoading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-        <CircularProgress color="primary" />
-      </Box>
-    );
-  }
-
   // Create Board Dialog
   const [boardDialogOpen, setBoardDialogOpen] = useState(false);
   const [newBoardTitle, setNewBoardTitle] = useState('');
   const [newBoardDesc, setNewBoardDesc] = useState('');
+
+  // Boards list pagination ("Mostrar mais Quadros")
+  const [visibleBoardsCount, setVisibleBoardsCount] = useState(BOARDS_PAGE_SIZE);
+
+  // Status columns pagination within a board ("Mostrar mais status")
+  const [visibleColumnsCount, setVisibleColumnsCount] = useState(STATUS_PAGE_SIZE);
 
   // Board 3-dots Menu & Rename Dialog state
   const [boardMenuAnchor, setBoardMenuAnchor] = useState<null | HTMLElement>(null);
@@ -113,6 +117,61 @@ export const TasksView: React.FC = () => {
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverColId, setDragOverColId] = useState<string | null>(null);
 
+  // Per-column tasks pagination: fetches more tasks of that status from the backend as the
+  // user scrolls to the bottom of a list (each column starts with the 10 most recent tasks).
+  const [extraTasksByColumn, setExtraTasksByColumn] = useState<Record<string, Task[]>>({});
+  const [columnPage, setColumnPage] = useState<Record<string, number>>({});
+  const [columnHasMore, setColumnHasMore] = useState<Record<string, boolean>>({});
+  const [columnLoadingMore, setColumnLoadingMore] = useState<Record<string, boolean>>({});
+
+  // The base task list is refetched on board switch and after mutations; discard any
+  // extra pages fetched so columns don't show stale or duplicated cards. columnHasMore is
+  // seeded from the API's own pagination data (current_page < last_page) rather than guessed.
+  useEffect(() => {
+    setExtraTasksByColumn({});
+    setColumnPage({});
+    setColumnHasMore(columnHasMoreFromApi);
+  }, [tasks, columnHasMoreFromApi]);
+
+  // Reset the visible status columns whenever the active board changes
+  useEffect(() => {
+    setVisibleColumnsCount(STATUS_PAGE_SIZE);
+  }, [activeBoardId]);
+
+  const fetchMoreTasksForColumn = async (columnId: string) => {
+    if (columnLoadingMore[columnId] || columnHasMore[columnId] === false) return;
+    const numericStatusId = Number(columnId);
+    if (isNaN(numericStatusId)) return;
+
+    const nextPage = (columnPage[columnId] ?? 1) + 1;
+    setColumnLoadingMore((prev) => ({ ...prev, [columnId]: true }));
+    try {
+      const pagina = await taskService.listByStatus(numericStatusId, nextPage);
+      const novasTarefas: Task[] = pagina.data.map((t) => ({
+        id: String(t.id),
+        boardId: String(t.quadro_id),
+        columnId: String(t.status_id),
+        title: t.nome,
+        description: t.descricao || '',
+      }));
+      setExtraTasksByColumn((prev) => ({
+        ...prev,
+        [columnId]: [...(prev[columnId] || []), ...novasTarefas],
+      }));
+      setColumnPage((prev) => ({ ...prev, [columnId]: pagina.current_page }));
+      setColumnHasMore((prev) => ({ ...prev, [columnId]: pagina.current_page < pagina.last_page }));
+    } finally {
+      setColumnLoadingMore((prev) => ({ ...prev, [columnId]: false }));
+    }
+  };
+
+  const handleColumnScroll = (e: React.UIEvent<HTMLDivElement>, columnId: string) => {
+    const el = e.currentTarget;
+    if (el.scrollTop + el.clientHeight < el.scrollHeight - 48) return;
+    if (!columnHasMore[columnId]) return;
+    fetchMoreTasksForColumn(columnId);
+  };
+
   // Board creation
   const handleSaveBoard = () => {
     if (!newBoardTitle.trim()) return;
@@ -125,7 +184,7 @@ export const TasksView: React.FC = () => {
   // Add list (column) inline
   const handleCreateList = () => {
     if (!newListTitle.trim() || !activeBoard) return;
-    addStatusToBoard(activeBoard.id, newListTitle.trim(), '#E2E8F0');
+    addStatusToBoard(activeBoard.id, newListTitle.trim());
     setNewListTitle('');
     setIsAddingList(false);
   };
@@ -152,7 +211,7 @@ export const TasksView: React.FC = () => {
 
   const handleSaveEditList = () => {
     if (!statusTitle.trim() || !activeBoard || !editingCol) return;
-    editStatus(activeBoard.id, editingCol.id, statusTitle.trim(), '#E2E8F0');
+    editStatus(activeBoard.id, editingCol.id, statusTitle.trim());
     setEditStatusDialogOpen(false);
   };
 
@@ -233,12 +292,16 @@ export const TasksView: React.FC = () => {
       </MenuItem>
       <MenuItem
         onClick={handleArchiveBoard}
-        disabled={boards.length <= 1}
+        disabled={boards.length <= 1 || isMutating}
         sx={{ color: 'error.main' }}
       >
-        <ArchiveIcon fontSize="small" sx={{ mr: 1.2, color: 'error.main' }} />
+        {isMutating ? (
+          <CircularProgress size={16} thickness={5} sx={{ mr: 1.2, color: 'error.main' }} />
+        ) : (
+          <ArchiveIcon fontSize="small" sx={{ mr: 1.2, color: 'error.main' }} />
+        )}
         <Typography variant="body2" sx={{ fontWeight: 600 }}>
-          Arquivar
+          {isMutating ? 'Arquivando...' : 'Arquivar'}
         </Typography>
       </MenuItem>
     </Menu>
@@ -304,7 +367,7 @@ export const TasksView: React.FC = () => {
       }}
       slotProps={{ paper: { sx: { borderRadius: 2, minWidth: 160 } } }}
     >
-      <MenuItem onClick={handleOpenEditStatus}>
+      <MenuItem onClick={handleOpenEditStatus} disabled={isMutating}>
         <EditIcon fontSize="small" sx={{ mr: 1.2, color: 'text.secondary' }} />
         <Typography variant="body2" sx={{ fontWeight: 600 }}>
           Editar
@@ -312,12 +375,16 @@ export const TasksView: React.FC = () => {
       </MenuItem>
       <MenuItem
         onClick={handleArchiveStatus}
-        disabled={Boolean(activeBoard && activeBoard.columns.length <= 1)}
+        disabled={Boolean(activeBoard && activeBoard.columns.length <= 1) || isMutating}
         sx={{ color: 'error.main' }}
       >
-        <ArchiveIcon fontSize="small" sx={{ mr: 1.2, color: 'error.main' }} />
+        {isMutating ? (
+          <CircularProgress size={16} thickness={5} sx={{ mr: 1.2, color: 'error.main' }} />
+        ) : (
+          <ArchiveIcon fontSize="small" sx={{ mr: 1.2, color: 'error.main' }} />
+        )}
         <Typography variant="body2" sx={{ fontWeight: 600 }}>
-          Arquivar
+          {isMutating ? 'Arquivando...' : 'Arquivar'}
         </Typography>
       </MenuItem>
     </Menu>
@@ -389,19 +456,31 @@ export const TasksView: React.FC = () => {
   const handleDrop = (e: React.DragEvent, targetColId: string) => {
     e.preventDefault();
     const taskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
-    if (taskId) {
+    if (taskId && !isMutating) {
       moveTaskStatus(taskId, targetColId);
     }
     setDraggingTaskId(null);
     setDragOverColId(null);
   };
 
+  // All hooks are declared above this line — early returns for loading/state
+  // branches only happen after every hook has run, on every render.
+  if (isLoading) {
+    return (
+      <PageContainer>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+          <CircularProgress color="primary" />
+        </Box>
+      </PageContainer>
+    );
+  }
+
   // ==========================================
   // VIEW 1: BOARDS SELECTION SCREEN (ENTRADA)
   // ==========================================
   if (!activeBoard) {
     return (
-      <Box sx={{ maxWidth: 1000, mx: 'auto' }}>
+      <PageContainer disableMaxWidth>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 800 }}>
@@ -422,7 +501,7 @@ export const TasksView: React.FC = () => {
         </Box>
 
         <Grid container spacing={2.5}>
-          {boards.map((board) => {
+          {boards.slice(0, visibleBoardsCount).map((board) => {
             return (
               <Grid key={board.id} size={{ xs: 12, sm: 6, md: 4 }}>
                 <Card
@@ -481,40 +560,25 @@ export const TasksView: React.FC = () => {
               </Grid>
             );
           })}
+        </Grid>
 
-          {/* Quick Create Board Card */}
-          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-            <Box
-              onClick={() => setBoardDialogOpen(true)}
+        {/* PAGINATION: "Mostrar mais Quadros" */}
+        {visibleBoardsCount < boards.length && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+            <Button
+              variant="outlined"
+              onClick={() => setVisibleBoardsCount((c) => c + BOARDS_PAGE_SIZE)}
               sx={{
-                p: 3,
-                height: '100%',
-                minHeight: 160,
-                borderRadius: 2.5,
-                border: '2px dashed #CBD5E1',
-                bgcolor: '#FFFFFF',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                textAlign: 'center',
-                '&:hover': {
-                  borderColor: 'primary.main',
-                  bgcolor: 'rgba(220, 38, 38, 0.04)',
-                },
+                borderRadius: 2,
+                borderColor: '#CBD5E1',
+                color: 'text.primary',
+                '&:hover': { borderColor: 'primary.main', color: 'primary.main' },
               }}
             >
-              <AddIcon sx={{ color: 'primary.main', fontSize: '2rem', mb: 1 }} />
-              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                Criar Novo Quadro
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Adicione um novo espaço de tarefas
-              </Typography>
-            </Box>
-          </Grid>
-        </Grid>
+              Mostrar mais Quadros
+            </Button>
+          </Box>
+        )}
 
         {/* CREATE NEW BOARD DIALOG */}
         <Dialog open={boardDialogOpen} onClose={() => setBoardDialogOpen(false)} maxWidth="xs" fullWidth>
@@ -555,7 +619,7 @@ export const TasksView: React.FC = () => {
 
         {boardMenuElement}
         {renameBoardDialogElement}
-      </Box>
+      </PageContainer>
     );
   }
 
@@ -570,7 +634,7 @@ export const TasksView: React.FC = () => {
   const hasTaskChanges = Boolean(selectedTask) && (taskTitleChanged || taskDescChanged);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
+    <PageContainer disableMaxWidth sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
       {/* Top Header of the Selected Board */}
       <Box
         sx={{
@@ -641,13 +705,17 @@ export const TasksView: React.FC = () => {
           overflowX: 'auto',
           overflowY: 'hidden',
           flexGrow: 1,
+          minHeight: 0,
           pb: 2,
           pr: 2,
         }}
       >
         {/* Render Each Column (List) */}
-        {activeBoard.columns.map((column) => {
+        {activeBoard.columns.slice(0, visibleColumnsCount).map((column) => {
           const colTasks = boardTasks.filter((t) => t.columnId === column.id);
+          const visibleColTasks = [...colTasks, ...(extraTasksByColumn[column.id] || [])];
+          const hasMoreTasks = columnHasMore[column.id] ?? false;
+          const isLoadingMoreTasks = Boolean(columnLoadingMore[column.id]);
           const isDraggingOver = dragOverColId === column.id;
 
           return (
@@ -657,9 +725,12 @@ export const TasksView: React.FC = () => {
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, column.id)}
               sx={{
-                flex: '0 0 280px',
-                width: 280,
+                flex: '0 0 auto',
+                width: 'fit-content',
+                minWidth: 280,
+                maxWidth: 400,
                 maxHeight: '100%',
+                minHeight: 0,
                 display: 'flex',
                 flexDirection: 'column',
                 bgcolor: isDraggingOver ? '#F9F1D0' : '#F1F2F4',
@@ -681,20 +752,6 @@ export const TasksView: React.FC = () => {
                   <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: '0.9rem', color: '#172B4D' }}>
                     {column.title}
                   </Typography>
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      bgcolor: 'rgba(0,0,0,0.06)',
-                      px: 0.8,
-                      py: 0.2,
-                      borderRadius: 1,
-                      fontWeight: 700,
-                      fontSize: '0.7rem',
-                      color: 'text.secondary',
-                    }}
-                  >
-                    {colTasks.length}
-                  </Typography>
                 </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -714,6 +771,7 @@ export const TasksView: React.FC = () => {
 
               {/* Cards Container */}
               <Box
+                onScroll={(e) => handleColumnScroll(e, column.id)}
                 sx={{
                   px: 1,
                   py: 0.5,
@@ -722,26 +780,29 @@ export const TasksView: React.FC = () => {
                   flexDirection: 'column',
                   gap: 1,
                   flexGrow: 1,
+                  minHeight: 0,
                 }}
               >
-                {colTasks.map((task) => (
+                {visibleColTasks.map((task) => (
                   <Card
                     key={task.id}
-                    draggable
+                    draggable={!isMutating}
                     onDragStart={(e) => handleDragStart(e, task.id)}
                     onClick={() => handleOpenCardModal(task)}
                     sx={{
-                      p: 1.5,
+                      p: 1.75,
+                      minHeight: 60,
                       bgcolor: '#FFFFFF',
                       borderRadius: 2,
                       boxShadow: '0 1px 2px rgba(9, 30, 66, 0.15)',
                       border: '1px solid #E2E8F0',
-                      cursor: 'grab',
+                      cursor: isMutating ? 'default' : 'grab',
+                      opacity: isMutating ? 0.7 : 1,
                       '&:hover': {
                         boxShadow: '0 2px 6px rgba(9, 30, 66, 0.2)',
                         borderColor: '#B8860B',
                       },
-                      '&:active': { cursor: 'grabbing' },
+                      '&:active': { cursor: isMutating ? 'default' : 'grabbing' },
                     }}
                   >
                     {/* Card Title */}
@@ -757,6 +818,19 @@ export const TasksView: React.FC = () => {
                     )}
                   </Card>
                 ))}
+
+                {/* Pagination: fetches more tasks of this status from the backend on scroll */}
+                {hasMoreTasks && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 0.5 }}>
+                    {isLoadingMoreTasks ? (
+                      <CircularProgress size={16} thickness={5} />
+                    ) : (
+                      <Typography variant="caption" sx={{ color: '#626F86' }}>
+                        Role para ver mais tarefas
+                      </Typography>
+                    )}
+                  </Box>
+                )}
 
                 {/* Inline Card Creator Form */}
                 {addingCardColId === column.id ? (
@@ -822,6 +896,25 @@ export const TasksView: React.FC = () => {
             </Box>
           );
         })}
+
+        {/* PAGINATION: "Mostrar mais status" */}
+        {visibleColumnsCount < activeBoard.columns.length && (
+          <Box sx={{ flex: '0 0 auto', display: 'flex', alignItems: 'flex-start', pt: 1.5 }}>
+            <Button
+              variant="outlined"
+              onClick={() => setVisibleColumnsCount((c) => c + STATUS_PAGE_SIZE)}
+              sx={{
+                borderRadius: 2,
+                borderColor: '#CBD5E1',
+                color: 'text.primary',
+                whiteSpace: 'nowrap',
+                '&:hover': { borderColor: 'primary.main', color: 'primary.main' },
+              }}
+            >
+              Mostrar mais status
+            </Button>
+          </Box>
+        )}
 
         {/* "+ Adicionar outra lista" Column */}
         <Box sx={{ flex: '0 0 280px', width: 280 }}>
@@ -1009,10 +1102,14 @@ export const TasksView: React.FC = () => {
           onClose={() => setCardMenuAnchor(null)}
           slotProps={{ paper: { sx: { borderRadius: 2, minWidth: 160 } } }}
         >
-          <MenuItem onClick={handleArchiveTask} sx={{ color: 'error.main' }}>
-            <ArchiveIcon fontSize="small" sx={{ mr: 1.2, color: 'error.main' }} />
+          <MenuItem onClick={handleArchiveTask} disabled={isMutating} sx={{ color: 'error.main' }}>
+            {isMutating ? (
+              <CircularProgress size={16} thickness={5} sx={{ mr: 1.2, color: 'error.main' }} />
+            ) : (
+              <ArchiveIcon fontSize="small" sx={{ mr: 1.2, color: 'error.main' }} />
+            )}
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              Arquivar cartão
+              {isMutating ? 'Arquivando...' : 'Arquivar cartão'}
             </Typography>
           </MenuItem>
         </Menu>
@@ -1162,7 +1259,8 @@ export const TasksView: React.FC = () => {
                 <Button
                   fullWidth
                   size="small"
-                  startIcon={<MoveIcon fontSize="small" />}
+                  disabled={isMutating}
+                  startIcon={isMutating ? <CircularProgress size={14} thickness={5} sx={{ color: '#172B4D' }} /> : <MoveIcon fontSize="small" />}
                   onClick={(e) => setMoveMenuAnchor(e.currentTarget)}
                   sx={{
                     justifyContent: 'flex-start',
@@ -1194,6 +1292,7 @@ export const TasksView: React.FC = () => {
                       key={col.id}
                       selected={col.id === selectedTask?.columnId}
                       onClick={() => handleMoveTaskToCol(col.id)}
+                      disabled={isMutating}
                       sx={{ fontSize: '0.875rem' }}
                     >
                       {col.title} {col.id === selectedTask?.columnId && ' (atual)'}
@@ -1204,7 +1303,8 @@ export const TasksView: React.FC = () => {
                 <Button
                   fullWidth
                   size="small"
-                  startIcon={<CopyIcon fontSize="small" />}
+                  disabled={isMutating}
+                  startIcon={isMutating ? <CircularProgress size={14} thickness={5} sx={{ color: '#172B4D' }} /> : <CopyIcon fontSize="small" />}
                   onClick={handleDuplicateTask}
                   sx={{
                     justifyContent: 'flex-start',
@@ -1224,7 +1324,8 @@ export const TasksView: React.FC = () => {
                 <Button
                   fullWidth
                   size="small"
-                  startIcon={<ArchiveIcon fontSize="small" />}
+                  disabled={isMutating}
+                  startIcon={isMutating ? <CircularProgress size={14} thickness={5} sx={{ color: '#B8860B' }} /> : <ArchiveIcon fontSize="small" />}
                   onClick={handleArchiveTask}
                   sx={{
                     justifyContent: 'flex-start',
@@ -1238,7 +1339,7 @@ export const TasksView: React.FC = () => {
                     '&:hover': { bgcolor: '#F3E3A3' },
                   }}
                 >
-                  Arquivar
+                  {isMutating ? 'Processando...' : 'Arquivar'}
                 </Button>
               </Box>
                 </ClickAwayListener>
@@ -1300,6 +1401,6 @@ export const TasksView: React.FC = () => {
       {boardMenuElement}
       {renameBoardDialogElement}
       {statusMenuElement}
-    </Box>
+    </PageContainer>
   );
 };

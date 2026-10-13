@@ -59,26 +59,6 @@ export interface BackendUserDetail {
   status?: string;
 }
 
-export interface BackendBoard {
-  id: number;
-  nome: string;
-  descricao?: string | null;
-}
-
-export interface BackendStatus {
-  id: number;
-  nome: string;
-  descricao?: string | null;
-}
-
-export interface BackendTask {
-  id: number;
-  nome: string;
-  descricao?: string | null;
-  quadro_id: number;
-  status_id: number;
-}
-
 export interface AuthResponse {
   usuario: {
     id: number;
@@ -128,57 +108,5 @@ const createCrudService = <T>(basePath: string) => ({
       method: 'DELETE',
     }),
 });
-
-export const boardsService = createCrudService<BackendBoard>('/quadros');
-
-export const statusService = {
-  list: async (boardId: number): Promise<BackendStatus[]> => {
-    const res = await apiRequest<BackendStatus[] | { data: BackendStatus[] }>(`/quadros/${boardId}/status`);
-    if (Array.isArray(res)) return res;
-    if (res && Array.isArray((res as { data?: BackendStatus[] }).data)) {
-      return (res as { data: BackendStatus[] }).data;
-    }
-    return [];
-  },
-  create: async (boardId: number, data: { nome: string; descricao?: string | null }) =>
-    apiRequest<BackendStatus>(`/quadros/${boardId}/status`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  update: async (boardId: number, statusId: number, data: { nome?: string; descricao?: string | null }) =>
-    apiRequest<BackendStatus>(`/quadros/${boardId}/status/${statusId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
-  delete: async (boardId: number, statusId: number) =>
-    apiRequest<void>(`/quadros/${boardId}/status/${statusId}`, {
-      method: 'DELETE',
-    }),
-};
-
-export const tasksService = {
-  list: async (): Promise<BackendTask[]> => {
-    const res = await apiRequest<BackendTask[] | { data: BackendTask[] }>('/tarefas');
-    if (Array.isArray(res)) return res;
-    if (res && Array.isArray((res as { data?: BackendTask[] }).data)) {
-      return (res as { data: BackendTask[] }).data;
-    }
-    return [];
-  },
-  create: async (data: { nome: string; descricao?: string | null; status_id: number; quadro_id: number }) =>
-    apiRequest<BackendTask>('/tarefas', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  update: async (id: number, data: { nome?: string; descricao?: string | null; status_id?: number; quadro_id?: number }) =>
-    apiRequest<BackendTask>(`/tarefas/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
-  delete: async (id: number) =>
-    apiRequest<void>(`/tarefas/${id}`, {
-      method: 'DELETE',
-    }),
-};
 
 export const usersService = createCrudService<BackendUserDetail>('/usuarios');

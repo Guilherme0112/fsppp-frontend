@@ -33,12 +33,14 @@ interface AppContextType {
   deleteBoard: (id: string) => Promise<void>;
 
   // Statuses (Columns)
-  addStatusToBoard: (boardId: string, title: string, color: string) => Promise<void>;
-  editStatus: (boardId: string, statusId: string, title: string, color: string) => Promise<void>;
+  addStatusToBoard: (boardId: string, title: string) => Promise<void>;
+  editStatus: (boardId: string, statusId: string, title: string) => Promise<void>;
   deleteStatus: (boardId: string, statusId: string) => Promise<void>;
 
   // Tasks
   tasks: Task[];
+  // Whether each column (keyed by status/column id) has more pages of tasks beyond the initial batch.
+  columnHasMore: Record<string, boolean>;
   addTask: (task: Omit<Task, 'id'>) => Promise<void>;
   editTask: (id: string, updates: Partial<Task>) => Promise<void>;
   moveTaskStatus: (taskId: string, newColumnId: string) => Promise<void>;
@@ -95,13 +97,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Hook per module, passing activeModule to control query enablement
   const { boardsQuery, addBoardMutation, editBoardMutation, deleteBoardMutation } = useBoardsModule(isAuthenticated, activeModule);
-  const { statusesQuery, addStatusMutation, editStatusMutation, deleteStatusMutation } = useStatusesModule(activeBoardId, isAuthenticated, activeModule);
+  const { addStatusMutation, editStatusMutation, deleteStatusMutation } = useStatusesModule(activeBoardId, isAuthenticated, activeModule);
   const { tasksQuery, addTaskMutation, editTaskMutation, deleteTaskMutation } = useTasksModule(activeBoardId, isAuthenticated, activeModule);
   const { usersQuery, addUserMutation, editUserMutation, deleteUserMutation } = useUsersModule(isAuthenticated, activeModule);
 
   const boards = boardsQuery.data || [];
-  const statuses = statusesQuery.data || [];
-  const tasks = tasksQuery.data || [];
+  const statuses = tasksQuery.data?.statuses || [];
+  const tasks = tasksQuery.data?.tasks || [];
+  const columnHasMore = tasksQuery.data?.columnHasMore || {};
   const users = usersQuery.data || [];
 
   // Attach active board columns to active board object
@@ -116,7 +119,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isLoading =
     boardsQuery.isLoading ||
     usersQuery.isLoading ||
-    (Boolean(activeBoardId) && (statusesQuery.isLoading || tasksQuery.isLoading));
+    (Boolean(activeBoardId) && tasksQuery.isLoading);
 
   const isMutating =
     addBoardMutation.isPending ||
@@ -164,12 +167,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Statuses (Columns) Actions
-  const addStatusToBoard = async (boardId: string, title: string, color: string) => {
-    await addStatusMutation.mutateAsync({ boardId, title, color });
+  const addStatusToBoard = async (boardId: string, title: string) => {
+    await addStatusMutation.mutateAsync({ boardId, title });
   };
 
-  const editStatus = async (boardId: string, statusId: string, title: string, color: string) => {
-    await editStatusMutation.mutateAsync({ boardId, statusId, title, color });
+  const editStatus = async (boardId: string, statusId: string, title: string) => {
+    await editStatusMutation.mutateAsync({ boardId, statusId, title });
   };
 
   const deleteStatus = async (boardId: string, statusId: string) => {
@@ -216,6 +219,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         editStatus,
         deleteStatus,
         tasks,
+        columnHasMore,
         addTask,
         editTask,
         moveTaskStatus,
