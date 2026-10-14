@@ -8,8 +8,8 @@ export const mapBackendUser = (u: BackendUserDetail): User => ({
   id: String(u.id),
   name: u.nome,
   email: u.email,
-  role: u.funcao || 'Membro',
-  status: (u.status as 'Ativo' | 'Inativo') || 'Ativo',
+  createdAt: u.criado_em || undefined,
+  roles: u.papeis,
 });
 
 // 1. Boards Module Hook (Enabled ONLY when activeModule === 'tasks' and authenticated)
@@ -179,9 +179,8 @@ export function useTasksModule(boardId: string | undefined, isAuthenticated: boo
   });
 
   const editTaskMutation = useMutation({
-    mutationFn: async ({ id, updates, currentTasks }: { id: string; updates: Partial<Task>; currentTasks: Task[] }) => {
+    mutationFn: async ({ id, updates, existingTask }: { id: string; updates: Partial<Task>; existingTask?: Task }) => {
       const numericId = Number(id);
-      const existingTask = currentTasks.find((t) => t.id === id);
       if (!isNaN(numericId) && existingTask) {
         const bId = Number(updates.boardId || existingTask.boardId);
         const columnId = Number(updates.columnId || existingTask.columnId);
@@ -222,26 +221,43 @@ export function useTasksModule(boardId: string | undefined, isAuthenticated: boo
 }
 
 // 4. Users Module Hook (Enabled ONLY when activeModule === 'users' and authenticated)
-export function useUsersModule(isAuthenticated: boolean, activeModule: string) {
+export function useUsersModule(
+  page: number,
+  perPage: number,
+  isAuthenticated: boolean,
+  activeModule: string
+) {
   const queryClient = useQueryClient();
 
   const usersQuery = useQuery({
-    queryKey: ['users'],
+    queryKey: ['users', page, perPage],
     queryFn: async () => {
-      const res = await userService.list();
-      return res.map(mapBackendUser);
+      const res = await userService.list(page, perPage);
+      return {
+        users: res.data.map(mapBackendUser),
+        total: res.total,
+        lastPage: res.last_page,
+      };
     },
+    enabled: isAuthenticated && activeModule === 'users',
+    placeholderData: (previousData) => previousData,
+    staleTime: Infinity,
+  });
+
+  const rolesQuery = useQuery({
+    queryKey: ['papeis'],
+    queryFn: () => userService.listarPapeis(),
     enabled: isAuthenticated && activeModule === 'users',
     staleTime: Infinity,
   });
 
   const addUserMutation = useMutation({
-    mutationFn: async (userData: Omit<User, 'id'>) => {
+    mutationFn: async (userData: { name: string; email: string; password: string; roles?: string[] }) => {
       return await userService.create({
         nome: userData.name,
         email: userData.email,
-        funcao: userData.role,
-        status: userData.status,
+        senha: userData.password,
+        papeis: userData.roles || [],
       });
     },
     onSuccess: () => {
@@ -250,14 +266,20 @@ export function useUsersModule(isAuthenticated: boolean, activeModule: string) {
   });
 
   const editUserMutation = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: Partial<User> }) => {
+    mutationFn: async ({
+      id,
+      updates,
+    }: {
+      id: string;
+      updates: { name: string; email: string; password?: string; roles?: string[] };
+    }) => {
       const numericId = Number(id);
       if (!isNaN(numericId)) {
         return await userService.update(numericId, {
           nome: updates.name,
           email: updates.email,
-          funcao: updates.role,
-          status: updates.status,
+          papeis: updates.roles || [],
+          ...(updates.password ? { senha: updates.password } : {}),
         });
       }
     },
@@ -280,6 +302,7 @@ export function useUsersModule(isAuthenticated: boolean, activeModule: string) {
 
   return {
     usersQuery,
+    rolesQuery,
     addUserMutation,
     editUserMutation,
     deleteUserMutation,

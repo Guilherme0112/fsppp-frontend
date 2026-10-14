@@ -4,29 +4,33 @@ import { authService, setAuthToken, getAuthToken } from '../services/apiClient';
 
 interface AuthContextType {
   currentUser: User | null;
+  permissions: string[];
+  hasPermission: (permission: string) => boolean;
   isAuthenticated: boolean;
   login: (email: string, password?: string) => Promise<boolean>;
   logout: () => Promise<void>;
 }
 
+interface StoredSession {
+  user: User;
+  permissions: string[];
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+  const [session, setSession] = useState<StoredSession | null>(() => {
     const token = getAuthToken();
     if (token) {
       try {
-        const saved = localStorage.getItem('app_current_user');
+        const saved = localStorage.getItem('app_session');
         if (saved) return JSON.parse(saved);
       } catch {
         // ignore
       }
       return {
-        id: '1',
-        name: 'Usuário',
-        email: 'usuario@empresa.com',
-        role: 'Membro',
-        status: 'Ativo',
+        user: { id: '1', name: 'Usuário', email: 'usuario@empresa.com' },
+        permissions: [],
       };
     }
     return null;
@@ -35,15 +39,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, password?: string): Promise<boolean> => {
     const res = await authService.login(email, password || '');
     setAuthToken(res.token);
-    const userObj: User = {
-      id: String(res.usuario.id),
-      name: res.usuario.nome,
-      email: res.usuario.email,
-      role: 'Administrador',
-      status: 'Ativo',
+    const newSession: StoredSession = {
+      user: {
+        id: String(res.usuario.id),
+        name: res.usuario.nome,
+        email: res.usuario.email,
+      },
+      permissions: res.permissoes || [],
     };
-    setCurrentUser(userObj);
-    localStorage.setItem('app_current_user', JSON.stringify(userObj));
+    setSession(newSession);
+    localStorage.setItem('app_session', JSON.stringify(newSession));
     return true;
   };
 
@@ -54,15 +59,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // ignore network errors on logout
     }
     setAuthToken(null);
-    setCurrentUser(null);
-    localStorage.removeItem('app_current_user');
+    setSession(null);
+    localStorage.removeItem('app_session');
   };
+
+  const permissions = session?.permissions || [];
 
   return (
     <AuthContext.Provider
       value={{
-        currentUser,
-        isAuthenticated: !!currentUser,
+        currentUser: session?.user || null,
+        permissions,
+        hasPermission: (permission: string) => permissions.includes(permission),
+        isAuthenticated: !!session,
         login,
         logout,
       }}

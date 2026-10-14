@@ -403,10 +403,14 @@ export const TasksView: React.FC = () => {
   const handleSaveCardModal = () => {
     if (!cardFormTitle.trim() || !selectedTask) return;
     const trimmedTitle = cardFormTitle.trim();
-    editTask(selectedTask.id, {
-      title: trimmedTitle,
-      description: cardFormDesc,
-    });
+    editTask(
+      selectedTask.id,
+      {
+        title: trimmedTitle,
+        description: cardFormDesc,
+      },
+      selectedTask
+    );
     // Keep the local snapshot in sync so the save button hides when there are no pending changes
     setSelectedTask({ ...selectedTask, title: trimmedTitle, description: cardFormDesc });
     setIsEditingDesc(false);
@@ -425,7 +429,7 @@ export const TasksView: React.FC = () => {
 
   const handleMoveTaskToCol = (targetColId: string) => {
     if (!selectedTask) return;
-    moveTaskStatus(selectedTask.id, targetColId);
+    moveTaskStatus(selectedTask.id, targetColId, selectedTask);
     setMoveMenuAnchor(null);
     setCardModalOpen(false);
   };
@@ -457,7 +461,9 @@ export const TasksView: React.FC = () => {
     e.preventDefault();
     const taskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
     if (taskId && !isMutating) {
-      moveTaskStatus(taskId, targetColId);
+      const knownTask = boardTasks.find((t) => t.id === taskId)
+        || Object.values(extraTasksByColumn).flat().find((t) => t.id === taskId);
+      moveTaskStatus(taskId, targetColId, knownTask);
     }
     setDraggingTaskId(null);
     setDragOverColId(null);

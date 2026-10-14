@@ -51,14 +51,6 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
   return response.json();
 }
 
-export interface BackendUserDetail {
-  id: number;
-  nome: string;
-  email: string;
-  funcao?: string;
-  status?: string;
-}
-
 export interface AuthResponse {
   usuario: {
     id: number;
@@ -67,6 +59,7 @@ export interface AuthResponse {
   };
   token: string;
   tipo_token: string;
+  permissoes: string[];
 }
 
 export const authService = {
@@ -84,29 +77,3 @@ export const authService = {
   },
 };
 
-const createCrudService = <T>(basePath: string) => ({
-  list: async (): Promise<T[]> => {
-    const res = await apiRequest<T[] | { data: T[] }>(basePath);
-    if (Array.isArray(res)) return res;
-    if (res && Array.isArray((res as { data?: T[] }).data)) {
-      return (res as { data: T[] }).data;
-    }
-    return [];
-  },
-  create: async (data: Record<string, unknown>) =>
-    apiRequest<T>(basePath, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  update: async (id: number, data: Record<string, unknown>) =>
-    apiRequest<T>(`${basePath}/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
-  delete: async (id: number) =>
-    apiRequest<void>(`${basePath}/${id}`, {
-      method: 'DELETE',
-    }),
-});
-
-export const usersService = createCrudService<BackendUserDetail>('/usuarios');

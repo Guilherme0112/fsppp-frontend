@@ -10,18 +10,20 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Chip,
+  TablePagination,
   IconButton,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   CircularProgress,
+  Alert,
+  Chip,
+  FormGroup,
+  FormControlLabel,
+  Checkbox,
+  FormLabel,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -32,39 +34,97 @@ import { useApp } from '../../context/AppContext';
 import { User } from '../../types';
 import { PageContainer } from '../common/PageContainer';
 
+const formatDate = (iso?: string) => {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('pt-BR');
+};
+
 export const UsersView: React.FC = () => {
-  const { users, addUser, editUser, deleteUser, isLoading } = useApp();
+  const {
+    users,
+    usersTotal,
+    usersPage,
+    usersPerPage,
+    setUsersPage,
+    setUsersPerPage,
+    roles,
+    addUser,
+    editUser,
+    deleteUser,
+    isLoading,
+    isMutating,
+  } = useApp();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    role: 'Membro',
-    status: 'Ativo' as 'Ativo' | 'Inativo',
-  });
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', confirmPassword: '', roles: [] as string[] });
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
 
   const handleOpenAdd = () => {
     setEditingUser(null);
-    setFormData({ name: '', email: '', role: 'Membro', status: 'Ativo' });
+    setFormData({ name: '', email: '', password: '', confirmPassword: '', roles: [] });
+    setFormError(null);
     setModalOpen(true);
   };
 
   const handleOpenEdit = (user: User) => {
     setEditingUser(user);
-    setFormData({ name: user.name, email: user.email, role: user.role, status: user.status });
+    setFormData({ name: user.name, email: user.email, password: '', confirmPassword: '', roles: user.roles || [] });
+    setFormError(null);
     setModalOpen(true);
   };
 
-  const handleSave = () => {
-    if (!formData.name.trim() || !formData.email.trim()) return;
+  const toggleRole = (papel: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      roles: prev.roles.includes(papel) ? prev.roles.filter((r) => r !== papel) : [...prev.roles, papel],
+    }));
+  };
 
-    if (editingUser) {
-      editUser(editingUser.id, formData);
-    } else {
-      addUser(formData);
+  const handleSave = async () => {
+    const name = formData.name.trim();
+    const email = formData.email.trim();
+    const password = formData.password.trim();
+    if (!name || !email) return;
+    if (!editingUser && !password) {
+      setFormError('Defina uma senha para o novo usuário.');
+      return;
     }
-    setModalOpen(false);
+    if (password && password !== formData.confirmPassword.trim()) {
+      setFormError('As senhas não coincidem.');
+      return;
+    }
+
+    try {
+      if (editingUser) {
+        await editUser(editingUser.id, {
+          name,
+          email,
+          roles: formData.roles,
+          ...(password ? { password } : {}),
+        });
+      } else {
+        await addUser({ name, email, password, roles: formData.roles });
+      }
+      setModalOpen(false);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Não foi possível salvar o usuário.');
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingUser) return;
+    const user = deletingUser;
+    setDeletingUser(null);
+    await deleteUser(user.id);
+    // If this was the last row on the current page, step back a page.
+    if (users.length === 1 && usersPage > 1) {
+      setUsersPage(usersPage - 1);
+    }
   };
 
   return (
@@ -76,7 +136,7 @@ export const UsersView: React.FC = () => {
             Usuários
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Gerencie os usuários e permissões do sistema
+            Gerencie os usuários com acesso ao sistema
           </Typography>
         </Box>
         <Button
@@ -97,8 +157,8 @@ export const UsersView: React.FC = () => {
               <TableRow sx={{ bgcolor: '#F8FAFC' }}>
                 <TableCell sx={{ fontWeight: 700 }}>Nome</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>E-mail</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Função / Cargo</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Papéis</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Criado em</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 700 }}>Ações</TableCell>
               </TableRow>
             </TableHead>
@@ -119,25 +179,33 @@ export const UsersView: React.FC = () => {
                 users.map((user) => (
                   <TableRow key={user.id} hover>
                     <TableCell sx={{ fontWeight: 600 }}>{user.name}</TableCell>
-                    <TableCell color="text.secondary">{user.email}</TableCell>
-                    <TableCell>{user.role}</TableCell>
+                    <TableCell sx={{ color: 'text.secondary' }}>{user.email}</TableCell>
                     <TableCell>
-                      <Chip
-                        label={user.status}
-                        size="small"
-                        color={user.status === 'Ativo' ? 'success' : 'default'}
-                        sx={{ fontWeight: 600, fontSize: '0.75rem' }}
-                      />
+                      {user.roles && user.roles.length > 0 ? (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {user.roles.map((papel) => (
+                            <Chip key={papel} label={papel} size="small" sx={{ fontWeight: 600, fontSize: '0.75rem' }} />
+                          ))}
+                        </Box>
+                      ) : (
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>—</Typography>
+                      )}
                     </TableCell>
+                    <TableCell sx={{ color: 'text.secondary' }}>{formatDate(user.createdAt)}</TableCell>
                     <TableCell align="right">
-                      <IconButton size="small" onClick={() => handleOpenEdit(user)} sx={{ color: 'text.secondary' }}>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleOpenEdit(user)}
+                        disabled={isMutating}
+                        sx={{ color: 'text.secondary' }}
+                      >
                         <EditIcon fontSize="small" />
                       </IconButton>
                       <IconButton
                         size="small"
                         color="error"
-                        onClick={() => deleteUser(user.id)}
-                        disabled={users.length <= 1}
+                        onClick={() => setDeletingUser(user)}
+                        disabled={isMutating || usersTotal <= 1}
                       >
                         <DeleteIcon fontSize="small" />
                       </IconButton>
@@ -148,6 +216,18 @@ export const UsersView: React.FC = () => {
             </TableBody>
           </Table>
         </TableContainer>
+
+        <TablePagination
+          component="div"
+          count={usersTotal}
+          page={usersPage - 1}
+          onPageChange={(_e, newPage) => setUsersPage(newPage + 1)}
+          rowsPerPage={usersPerPage}
+          onRowsPerPageChange={(e) => setUsersPerPage(parseInt(e.target.value, 10))}
+          rowsPerPageOptions={[5, 10, 25, 50]}
+          labelRowsPerPage="Linhas por página"
+          labelDisplayedRows={({ from, to, count }) => `${from}–${to} de ${count}`}
+        />
       </Card>
 
       {/* Add / Edit Dialog */}
@@ -157,10 +237,12 @@ export const UsersView: React.FC = () => {
         </DialogTitle>
         <DialogContent dividers>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            {formError && <Alert severity="error">{formError}</Alert>}
             <TextField
               label="Nome Completo"
               fullWidth
               required
+              autoFocus
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             />
@@ -173,28 +255,80 @@ export const UsersView: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             />
             <TextField
-              label="Cargo / Função"
+              label={editingUser ? 'Nova Senha (opcional)' : 'Senha'}
+              type="password"
               fullWidth
-              value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+              required={!editingUser}
+              helperText={editingUser ? 'Deixe em branco para manter a senha atual.' : 'Mínimo de 6 caracteres.'}
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             />
-            <FormControl fullWidth>
-              <InputLabel>Status</InputLabel>
-              <Select
-                value={formData.status}
-                label="Status"
-                onChange={(e) => setFormData({ ...formData, status: e.target.value as 'Ativo' | 'Inativo' })}
-              >
-                <MenuItem value="Ativo">Ativo</MenuItem>
-                <MenuItem value="Inativo">Inativo</MenuItem>
-              </Select>
-            </FormControl>
+            <TextField
+              label="Confirmar Senha"
+              type="password"
+              fullWidth
+              required={!editingUser || Boolean(formData.password.trim())}
+              value={formData.confirmPassword}
+              onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+            />
+            <Box>
+              <FormLabel component="legend" sx={{ fontSize: '0.8rem', mb: 0.5 }}>
+                Papéis
+              </FormLabel>
+              <FormGroup>
+                {roles.length === 0 ? (
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    Nenhum papel cadastrado.
+                  </Typography>
+                ) : (
+                  roles.map((papel) => (
+                    <FormControlLabel
+                      key={papel}
+                      control={
+                        <Checkbox
+                          checked={formData.roles.includes(papel)}
+                          onChange={() => toggleRole(papel)}
+                        />
+                      }
+                      label={papel}
+                    />
+                  ))
+                )}
+              </FormGroup>
+            </Box>
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setModalOpen(false)}>Cancelar</Button>
-          <Button variant="contained" onClick={handleSave} disabled={!formData.name.trim() || !formData.email.trim()}>
-            Salvar
+          <Button onClick={() => setModalOpen(false)} disabled={isMutating}>Cancelar</Button>
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            disabled={!formData.name.trim() || !formData.email.trim() || isMutating}
+            startIcon={isMutating ? <CircularProgress size={16} thickness={5} sx={{ color: 'inherit' }} /> : undefined}
+          >
+            {isMutating ? 'Salvando...' : 'Salvar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={Boolean(deletingUser)} onClose={() => setDeletingUser(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800 }}>Apagar Usuário</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2">
+            Tem certeza que deseja apagar <strong>{deletingUser?.name}</strong>? Essa ação não pode ser desfeita.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setDeletingUser(null)} disabled={isMutating}>Cancelar</Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleConfirmDelete}
+            disabled={isMutating}
+            startIcon={isMutating ? <CircularProgress size={16} thickness={5} sx={{ color: 'inherit' }} /> : undefined}
+          >
+            {isMutating ? 'Apagando...' : 'Apagar'}
           </Button>
         </DialogActions>
       </Dialog>

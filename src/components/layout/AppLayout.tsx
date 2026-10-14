@@ -18,6 +18,7 @@ import {
 import {
   ViewKanban as TaskIcon,
   People as UsersIcon,
+  Payments as PaymentsIcon,
   Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
@@ -40,6 +41,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         return <TaskIcon />;
       case 'users':
         return <UsersIcon />;
+      case 'pagamentos':
+        return <PaymentsIcon />;
       default:
         return <TaskIcon />;
     }

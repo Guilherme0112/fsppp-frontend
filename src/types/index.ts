@@ -2,8 +2,8 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: string;
-  status: 'Ativo' | 'Inativo';
+  createdAt?: string;
+  roles?: string[];
 }
 
 export interface BoardColumn {

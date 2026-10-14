@@ -8,6 +8,7 @@ import { AppLayout } from './components/layout/AppLayout';
 import { LoginView } from './components/auth/LoginView';
 import { UsersView } from './components/users/UsersView';
 import { TasksView } from './components/tasks/TasksView';
+import { ListaSolicitacoes } from './components/solicitacoes/ListaSolicitacoes';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,6 +31,7 @@ const MainAppContent: React.FC = () => {
     <AppLayout>
       {activeModule === 'tasks' && <TasksView />}
       {activeModule === 'users' && <UsersView />}
+      {activeModule === 'pagamentos' && <ListaSolicitacoes />}
     </AppLayout>
   );
 };

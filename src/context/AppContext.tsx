@@ -19,9 +19,18 @@ interface AppContextType {
 
   // Users
   users: User[];
-  addUser: (user: Omit<User, 'id'>) => void;
-  editUser: (id: string, user: Partial<User>) => void;
-  deleteUser: (id: string) => void;
+  usersTotal: number;
+  usersPage: number;
+  usersPerPage: number;
+  setUsersPage: (page: number) => void;
+  setUsersPerPage: (perPage: number) => void;
+  roles: string[];
+  addUser: (user: { name: string; email: string; password: string; roles?: string[] }) => Promise<void>;
+  editUser: (
+    id: string,
+    updates: { name: string; email: string; password?: string; roles?: string[] }
+  ) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
 
   // Boards
   boards: Board[];
@@ -42,21 +51,22 @@ interface AppContextType {
   // Whether each column (keyed by status/column id) has more pages of tasks beyond the initial batch.
   columnHasMore: Record<string, boolean>;
   addTask: (task: Omit<Task, 'id'>) => Promise<void>;
-  editTask: (id: string, updates: Partial<Task>) => Promise<void>;
-  moveTaskStatus: (taskId: string, newColumnId: string) => Promise<void>;
+  editTask: (id: string, updates: Partial<Task>, knownTask?: Task) => Promise<void>;
+  moveTaskStatus: (taskId: string, newColumnId: string, knownTask?: Task) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuth();
-  
-  // React client-side hash routing sync (#/tarefas and #/usuarios)
+  const { isAuthenticated, hasPermission } = useAuth();
+
+  // React client-side hash routing sync (#/tarefas, #/usuarios and #/pagamentos)
   const [activeModule, setActiveModuleState] = useState<string>(() => {
     const hash = window.location.hash.replace('#/', '');
     if (hash === 'tarefas' || hash === 'tasks') return 'tasks';
     if (hash === 'usuarios' || hash === 'users') return 'users';
+    if (hash === 'pagamentos') return 'pagamentos';
     return 'tasks';
   });
 
@@ -71,6 +81,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveModuleState('tasks');
       } else if (hash === 'usuarios' || hash === 'users') {
         setActiveModuleState('users');
+      } else if (hash === 'pagamentos') {
+        setActiveModuleState('pagamentos');
       }
     };
 
@@ -84,28 +96,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       window.location.hash = '#/tarefas';
     } else if (mod === 'users') {
       window.location.hash = '#/usuarios';
+    } else if (mod === 'pagamentos') {
+      window.location.hash = '#/pagamentos';
     }
   };
 
   const [activeBoardId, setActiveBoardId] = useState<string>('');
 
-  // List of available modules
-  const [modules] = useState<AppModule[]>([
+  // Users table pagination (1-indexed, matching the backend's `page` query param)
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersPerPage, setUsersPerPageState] = useState(10);
+  const setUsersPerPage = (perPage: number) => {
+    setUsersPerPageState(perPage);
+    setUsersPage(1);
+  };
+
+  // List of available modules. "Solicitações de Pagamento" only shows up for users
+  // who can at least create a request — otherwise it's a dead-end nav item.
+  const modules: AppModule[] = [
     { id: 'tasks', name: 'Tarefas & Quadros', icon: 'ViewKanban' },
     { id: 'users', name: 'Usuários', icon: 'People' },
-  ]);
+    ...(hasPermission('solicitacoes.criar')
+      ? [{ id: 'pagamentos', name: 'Solicitações de Pagamento', icon: 'Payments' }]
+      : []),
+  ];
 
   // Hook per module, passing activeModule to control query enablement
   const { boardsQuery, addBoardMutation, editBoardMutation, deleteBoardMutation } = useBoardsModule(isAuthenticated, activeModule);
   const { addStatusMutation, editStatusMutation, deleteStatusMutation } = useStatusesModule(activeBoardId, isAuthenticated, activeModule);
   const { tasksQuery, addTaskMutation, editTaskMutation, deleteTaskMutation } = useTasksModule(activeBoardId, isAuthenticated, activeModule);
-  const { usersQuery, addUserMutation, editUserMutation, deleteUserMutation } = useUsersModule(isAuthenticated, activeModule);
+  const { usersQuery, rolesQuery, addUserMutation, editUserMutation, deleteUserMutation } = useUsersModule(usersPage, usersPerPage, isAuthenticated, activeModule);
 
   const boards = boardsQuery.data || [];
   const statuses = tasksQuery.data?.statuses || [];
   const tasks = tasksQuery.data?.tasks || [];
   const columnHasMore = tasksQuery.data?.columnHasMore || {};
-  const users = usersQuery.data || [];
+  const users = usersQuery.data?.users || [];
+  const usersTotal = usersQuery.data?.total || 0;
+  const roles = rolesQuery.data || [];
 
   // Attach active board columns to active board object
   const activeBoardBase = boards.find((b) => b.id === activeBoardId);
@@ -136,16 +164,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     deleteUserMutation.isPending;
 
   // User Actions
-  const addUser = (userData: Omit<User, 'id'>) => {
-    addUserMutation.mutate(userData);
+  const addUser = async (userData: { name: string; email: string; password: string; roles?: string[] }) => {
+    await addUserMutation.mutateAsync(userData);
   };
 
-  const editUser = (id: string, updates: Partial<User>) => {
-    editUserMutation.mutate({ id, updates });
+  const editUser = async (
+    id: string,
+    updates: { name: string; email: string; password?: string; roles?: string[] }
+  ) => {
+    await editUserMutation.mutateAsync({ id, updates });
   };
 
-  const deleteUser = (id: string) => {
-    deleteUserMutation.mutate(id);
+  const deleteUser = async (id: string) => {
+    await deleteUserMutation.mutateAsync(id);
   };
 
   // Board Actions
@@ -184,12 +215,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await addTaskMutation.mutateAsync(taskData);
   };
 
-  const editTask = async (id: string, updates: Partial<Task>) => {
-    await editTaskMutation.mutateAsync({ id, updates, currentTasks: tasks });
+  const editTask = async (id: string, updates: Partial<Task>, knownTask?: Task) => {
+    const existingTask = knownTask || tasks.find((t) => t.id === id);
+    await editTaskMutation.mutateAsync({ id, updates, existingTask });
   };
 
-  const moveTaskStatus = async (taskId: string, newColumnId: string) => {
-    await editTask(taskId, { columnId: newColumnId });
+  const moveTaskStatus = async (taskId: string, newColumnId: string, knownTask?: Task) => {
+    await editTask(taskId, { columnId: newColumnId }, knownTask);
   };
 
   const deleteTask = async (id: string) => {
@@ -205,6 +237,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isLoading,
         isMutating,
         users,
+        usersTotal,
+        usersPage,
+        usersPerPage,
+        setUsersPage,
+        setUsersPerPage,
+        roles,
         addUser,
         editUser,
         deleteUser,
