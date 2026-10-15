@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '../types';
 import { authService, setAuthToken, getAuthToken } from '../services/apiClient';
 
@@ -35,6 +35,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     return null;
   });
+
+  // The permissions cached in localStorage are only a snapshot from the last
+  // login. If an admin changes this user's roles afterwards, the already-open
+  // session never sees it until it re-syncs with the backend — so do that once
+  // on every app load, replacing the stale copy with the server's current view.
+  useEffect(() => {
+    if (!getAuthToken()) return;
+
+    authService
+      .perfil()
+      .then((res) => {
+        const refreshed: StoredSession = {
+          user: {
+            id: String(res.usuario.id),
+            name: res.usuario.nome,
+            email: res.usuario.email,
+          },
+          permissions: res.permissoes || [],
+        };
+        setSession(refreshed);
+        localStorage.setItem('app_session', JSON.stringify(refreshed));
+      })
+      .catch(() => {
+        // Token is no longer valid (revoked/expired) — drop the stale session.
+        setAuthToken(null);
+        setSession(null);
+        localStorage.removeItem('app_session');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const login = async (email: string, password?: string): Promise<boolean> => {
     const res = await authService.login(email, password || '');

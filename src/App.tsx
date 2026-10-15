@@ -20,7 +20,7 @@ const queryClient = new QueryClient({
 });
 
 const MainAppContent: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, hasPermission } = useAuth();
   const { activeModule } = useApp();
 
   if (!isAuthenticated) {
@@ -29,9 +29,9 @@ const MainAppContent: React.FC = () => {
 
   return (
     <AppLayout>
-      {activeModule === 'tasks' && <TasksView />}
-      {activeModule === 'users' && <UsersView />}
-      {activeModule === 'pagamentos' && <ListaSolicitacoes />}
+      {activeModule === 'tasks' && hasPermission('quadros.listar') && <TasksView />}
+      {activeModule === 'users' && hasPermission('usuario.listar') && <UsersView />}
+      {activeModule === 'pagamentos' && hasPermission('solicitacoes.criar') && <ListaSolicitacoes />}
     </AppLayout>
   );
 };

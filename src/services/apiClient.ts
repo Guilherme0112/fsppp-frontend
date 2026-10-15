@@ -62,6 +62,15 @@ export interface AuthResponse {
   permissoes: string[];
 }
 
+export interface PerfilResponse {
+  usuario: {
+    id: number;
+    nome: string;
+    email: string;
+  };
+  permissoes: string[];
+}
+
 export const authService = {
   login: async (email: string, senha: string, nome_dispositivo = 'web-client') => {
     return apiRequest<AuthResponse>('/autenticacao/entrar', {
@@ -73,6 +82,14 @@ export const authService = {
   logout: async () => {
     return apiRequest<void>('/autenticacao/sair', {
       method: 'POST',
+    });
+  },
+  // Re-fetches the current user's roles/permissions from the backend, so a
+  // role change made after login (e.g. by an admin) doesn't stay stuck behind
+  // the stale snapshot cached in localStorage at login time.
+  perfil: async () => {
+    return apiRequest<PerfilResponse>('/autenticacao/perfil', {
+      method: 'GET',
     });
   },
 };

@@ -111,15 +111,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setUsersPage(1);
   };
 
-  // List of available modules. "Solicitações de Pagamento" only shows up for users
-  // who can at least create a request — otherwise it's a dead-end nav item.
+  // List of available modules, gated by the permission that lets a user see each one.
   const modules: AppModule[] = [
-    { id: 'tasks', name: 'Tarefas & Quadros', icon: 'ViewKanban' },
-    { id: 'users', name: 'Usuários', icon: 'People' },
+    ...(hasPermission('quadros.listar')
+      ? [{ id: 'tasks', name: 'Tarefas & Quadros', icon: 'ViewKanban' }]
+      : []),
+    ...(hasPermission('usuario.listar')
+      ? [{ id: 'users', name: 'Usuários', icon: 'People' }]
+      : []),
     ...(hasPermission('solicitacoes.criar')
       ? [{ id: 'pagamentos', name: 'Solicitações de Pagamento', icon: 'Payments' }]
       : []),
   ];
+
+  // If the current module isn't among the ones this user is allowed to see
+  // (e.g. right after login, or a stale #hash from a bookmark), fall back to
+  // the first permitted module instead of leaving a forbidden view mounted.
+  useEffect(() => {
+    if (isAuthenticated && modules.length > 0 && !modules.some((m) => m.id === activeModule)) {
+      setActiveModule(modules[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, activeModule, modules.map((m) => m.id).join(',')]);
 
   // Hook per module, passing activeModule to control query enablement
   const { boardsQuery, addBoardMutation, editBoardMutation, deleteBoardMutation } = useBoardsModule(isAuthenticated, activeModule);
