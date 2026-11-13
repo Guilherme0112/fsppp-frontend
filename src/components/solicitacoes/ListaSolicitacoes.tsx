@@ -280,6 +280,12 @@ export const ListaSolicitacoes: React.FC = () => {
   const resumo = useMemo(() => montarResumo(resumoQuery.data?.por_status), [resumoQuery.data]);
   const comFiltros = Boolean(busca.trim() || statusFiltro);
 
+  // Workflow actions (autorizar, verificação orçamentária, compras, concluir) só
+  // existem na aba "Todas as solicitações" — mesmo para admin. Em "Minhas
+  // solicitações" o usuário apenas acompanha e edita o que é dele.
+  const podeAgirNoFluxo = podeAprovar && aba === 'todas';
+  const podeConcluirNoFluxo = podeConcluir && aba === 'todas';
+
   const notificar = (severity: Feedback['severity'], message: string) => {
     setFeedback({ severity, message });
   };
@@ -689,7 +695,7 @@ export const ListaSolicitacoes: React.FC = () => {
                             </Tooltip>
                           )}
 
-                          {podeAprovar &&
+                          {podeAgirNoFluxo &&
                             (solicitacao.status === 'pendente' || solicitacao.status === 'enviado_diretoria') && (
                             <Tooltip title="Autorizar pela diretoria">
                               <span>
@@ -711,7 +717,7 @@ export const ListaSolicitacoes: React.FC = () => {
                             </Tooltip>
                           )}
 
-                          {podeAprovar && solicitacao.status === 'analise_projetos' && (
+                          {podeAgirNoFluxo && solicitacao.status === 'analise_projetos' && (
                             <Tooltip title="Registrar verificação orçamentária">
                               <span>
                                 <IconButton
@@ -730,7 +736,7 @@ export const ListaSolicitacoes: React.FC = () => {
                             </Tooltip>
                           )}
 
-                          {podeAprovar &&
+                          {podeAgirNoFluxo &&
                             (solicitacao.status === 'recursos_disponiveis_compras' ||
                               solicitacao.status === 'recursos_fundacao') && (
                               <Tooltip title="Atualizar andamento das compras">
@@ -751,7 +757,7 @@ export const ListaSolicitacoes: React.FC = () => {
                               </Tooltip>
                             )}
 
-                          {podeConcluir && podeConcluirStatus(solicitacao.status) && (
+                          {podeConcluirNoFluxo && podeConcluirStatus(solicitacao.status) && (
                             <Tooltip title="Concluir e arquivar">
                               <span>
                                 <IconButton
