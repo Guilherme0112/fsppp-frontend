@@ -5,6 +5,8 @@ import { authService, setAuthToken, getAuthToken } from '../services/apiClient';
 interface AuthContextType {
   currentUser: User | null;
   permissions: string[];
+  roles: string[];
+  isAdmin: boolean;
   hasPermission: (permission: string) => boolean;
   isAuthenticated: boolean;
   login: (email: string, password?: string) => Promise<boolean>;
@@ -51,6 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             id: String(res.usuario.id),
             name: res.usuario.nome,
             email: res.usuario.email,
+            roles: res.usuario.papeis ?? [],
           },
           permissions: res.permissoes || [],
         };
@@ -74,6 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: String(res.usuario.id),
         name: res.usuario.nome,
         email: res.usuario.email,
+        roles: res.usuario.papeis ?? [],
       },
       permissions: res.permissoes || [],
     };
@@ -94,12 +98,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const permissions = session?.permissions || [];
+  const roles = session?.user?.roles || [];
+  const isAdmin = roles.includes('Admin');
 
   return (
     <AuthContext.Provider
       value={{
         currentUser: session?.user || null,
         permissions,
+        roles,
+        isAdmin,
         hasPermission: (permission: string) => permissions.includes(permission),
         isAuthenticated: !!session,
         login,

@@ -56,6 +56,7 @@ export interface AuthResponse {
     id: number;
     nome: string;
     email: string;
+    papeis?: string[];
   };
   token: string;
   tipo_token: string;
@@ -67,6 +68,7 @@ export interface PerfilResponse {
     id: number;
     nome: string;
     email: string;
+    papeis?: string[];
   };
   permissoes: string[];
 }

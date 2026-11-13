@@ -137,7 +137,14 @@ export function useTasksModule(boardId: string | undefined, isAuthenticated: boo
   const tasksQuery = useQuery({
     queryKey: ['tasks', boardId],
     queryFn: async () => {
-      if (!boardId) return { tasks: [], statuses: [], columnHasMore: {} as Record<string, boolean> };
+      if (!boardId) {
+        return {
+          tasks: [],
+          statuses: [],
+          columnHasMore: {} as Record<string, boolean>,
+          columnTotal: {} as Record<string, number>,
+        };
+      }
       const res = await taskService.list(Number(boardId));
       return {
         tasks: res.tasks.map((t) => ({
@@ -154,6 +161,9 @@ export function useTasksModule(boardId: string | undefined, isAuthenticated: boo
         columnHasMore: Object.fromEntries(
           res.pagination.map((p) => [String(p.statusId), p.currentPage < p.lastPage])
         ) as Record<string, boolean>,
+        columnTotal: Object.fromEntries(
+          res.pagination.map((p) => [String(p.statusId), p.total])
+        ) as Record<string, number>,
       };
     },
     enabled: isAuthenticated && activeModule === 'tasks' && Boolean(boardId),
@@ -224,15 +234,16 @@ export function useTasksModule(boardId: string | undefined, isAuthenticated: boo
 export function useUsersModule(
   page: number,
   perPage: number,
+  search: string,
   isAuthenticated: boolean,
   activeModule: string
 ) {
   const queryClient = useQueryClient();
 
   const usersQuery = useQuery({
-    queryKey: ['users', page, perPage],
+    queryKey: ['users', page, perPage, search],
     queryFn: async () => {
-      const res = await userService.list(page, perPage);
+      const res = await userService.list(page, perPage, search || undefined);
       return {
         users: res.data.map(mapBackendUser),
         total: res.total,

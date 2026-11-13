@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import { User, Board, Task, BoardColumn, AppModule } from '../types';
 import { useAuth } from './AuthContext';
 import {
@@ -22,8 +22,12 @@ interface AppContextType {
   usersTotal: number;
   usersPage: number;
   usersPerPage: number;
+  usersSearch: string;
   setUsersPage: (page: number) => void;
   setUsersPerPage: (perPage: number) => void;
+  setUsersSearch: (search: string) => void;
+  refreshUsers: () => void;
+  isFetchingUsers: boolean;
   roles: string[];
   addUser: (user: { name: string; email: string; password: string; roles?: string[] }) => Promise<void>;
   editUser: (
@@ -37,6 +41,8 @@ interface AppContextType {
   activeBoardId: string;
   setActiveBoardId: (id: string) => void;
   activeBoard: Board | undefined;
+  refreshBoards: () => void;
+  isFetchingBoards: boolean;
   addBoard: (title: string, description: string) => Promise<void>;
   editBoard: (id: string, title: string, description?: string) => Promise<void>;
   deleteBoard: (id: string) => Promise<void>;
@@ -50,6 +56,8 @@ interface AppContextType {
   tasks: Task[];
   // Whether each column (keyed by status/column id) has more pages of tasks beyond the initial batch.
   columnHasMore: Record<string, boolean>;
+  // Total number of tasks in each column, including pages that have not been loaded yet.
+  columnTotal: Record<string, number>;
   addTask: (task: Omit<Task, 'id'>) => Promise<void>;
   editTask: (id: string, updates: Partial<Task>, knownTask?: Task) => Promise<void>;
   moveTaskStatus: (taskId: string, newColumnId: string, knownTask?: Task) => Promise<void>;
@@ -60,13 +68,18 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, hasPermission } = useAuth();
+  const podeAcessarCompras =
+    hasPermission('solicitacoes.criar') ||
+    hasPermission('solicitacoes.ver-todas') ||
+    hasPermission('solicitacoes.aprovar') ||
+    hasPermission('solicitacoes.concluir');
 
-  // React client-side hash routing sync (#/tarefas, #/usuarios and #/pagamentos)
+  // React client-side hash routing sync (#/tarefas, #/usuarios and #/compras)
   const [activeModule, setActiveModuleState] = useState<string>(() => {
     const hash = window.location.hash.replace('#/', '');
     if (hash === 'tarefas' || hash === 'tasks') return 'tasks';
     if (hash === 'usuarios' || hash === 'users') return 'users';
-    if (hash === 'pagamentos') return 'pagamentos';
+    if (hash === 'compras') return 'compras';
     return 'tasks';
   });
 
@@ -81,8 +94,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveModuleState('tasks');
       } else if (hash === 'usuarios' || hash === 'users') {
         setActiveModuleState('users');
-      } else if (hash === 'pagamentos') {
-        setActiveModuleState('pagamentos');
+      } else if (hash === 'compras') {
+        setActiveModuleState('compras');
       }
     };
 
@@ -96,8 +109,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       window.location.hash = '#/tarefas';
     } else if (mod === 'users') {
       window.location.hash = '#/usuarios';
-    } else if (mod === 'pagamentos') {
-      window.location.hash = '#/pagamentos';
+    } else if (mod === 'compras') {
+      window.location.hash = '#/compras';
     }
   };
 
@@ -106,10 +119,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Users table pagination (1-indexed, matching the backend's `page` query param)
   const [usersPage, setUsersPage] = useState(1);
   const [usersPerPage, setUsersPerPageState] = useState(10);
+  const [usersSearch, setUsersSearchState] = useState('');
   const setUsersPerPage = (perPage: number) => {
     setUsersPerPageState(perPage);
     setUsersPage(1);
   };
+  const setUsersSearch = useCallback((search: string) => {
+    setUsersSearchState(search);
+    setUsersPage(1);
+  }, []);
 
   // List of available modules, gated by the permission that lets a user see each one.
   const modules: AppModule[] = [
@@ -119,8 +137,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ...(hasPermission('usuario.listar')
       ? [{ id: 'users', name: 'Usuários', icon: 'People' }]
       : []),
-    ...(hasPermission('solicitacoes.criar')
-      ? [{ id: 'pagamentos', name: 'Solicitações de Pagamento', icon: 'Payments' }]
+    ...(podeAcessarCompras
+      ? [{ id: 'compras', name: 'Solicitações de Compra', icon: 'ShoppingCart' }]
       : []),
   ];
 
@@ -138,15 +156,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const { boardsQuery, addBoardMutation, editBoardMutation, deleteBoardMutation } = useBoardsModule(isAuthenticated, activeModule);
   const { addStatusMutation, editStatusMutation, deleteStatusMutation } = useStatusesModule(activeBoardId, isAuthenticated, activeModule);
   const { tasksQuery, addTaskMutation, editTaskMutation, deleteTaskMutation } = useTasksModule(activeBoardId, isAuthenticated, activeModule);
-  const { usersQuery, rolesQuery, addUserMutation, editUserMutation, deleteUserMutation } = useUsersModule(usersPage, usersPerPage, isAuthenticated, activeModule);
+  const { usersQuery, rolesQuery, addUserMutation, editUserMutation, deleteUserMutation } = useUsersModule(usersPage, usersPerPage, usersSearch, isAuthenticated, activeModule);
 
   const boards = boardsQuery.data || [];
   const statuses = tasksQuery.data?.statuses || [];
   const tasks = tasksQuery.data?.tasks || [];
   const columnHasMore = tasksQuery.data?.columnHasMore || {};
+  const columnTotal = tasksQuery.data?.columnTotal || {};
+  const isFetchingBoards =
+    boardsQuery.isFetching || (Boolean(activeBoardId) && tasksQuery.isFetching);
+  const refreshBoards = () => {
+    void boardsQuery.refetch();
+    if (activeBoardId) void tasksQuery.refetch();
+  };
   const users = usersQuery.data?.users || [];
   const usersTotal = usersQuery.data?.total || 0;
   const roles = rolesQuery.data || [];
+  const isFetchingUsers = usersQuery.isFetching || rolesQuery.isFetching;
+  const refreshUsers = () => {
+    void usersQuery.refetch();
+    void rolesQuery.refetch();
+  };
 
   // Attach active board columns to active board object
   const activeBoardBase = boards.find((b) => b.id === activeBoardId);
@@ -253,8 +283,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         usersTotal,
         usersPage,
         usersPerPage,
+        usersSearch,
         setUsersPage,
         setUsersPerPage,
+        setUsersSearch,
+        refreshUsers,
+        isFetchingUsers,
         roles,
         addUser,
         editUser,
@@ -263,6 +297,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activeBoardId,
         setActiveBoardId,
         activeBoard,
+        refreshBoards,
+        isFetchingBoards,
         addBoard,
         editBoard,
         deleteBoard,
@@ -271,6 +307,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteStatus,
         tasks,
         columnHasMore,
+        columnTotal,
         addTask,
         editTask,
         moveTaskStatus,

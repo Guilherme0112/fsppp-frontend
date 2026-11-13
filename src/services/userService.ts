@@ -17,8 +17,11 @@ export interface PaginatedUsers {
 }
 
 export const userService = {
-  list: (page: number, perPage: number): Promise<PaginatedUsers> =>
-    apiRequest<PaginatedUsers>(`/usuarios?page=${page}&per_page=${perPage}`),
+  list: (page: number, perPage: number, search?: string): Promise<PaginatedUsers> => {
+    const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    if (search) params.append('search', search);
+    return apiRequest<PaginatedUsers>(`/usuarios?${params.toString()}`);
+  },
   listarPapeis: (): Promise<string[]> => apiRequest<string[]>('/papeis'),
   create: (data: { nome: string; email: string; senha: string; papeis?: string[] }) =>
     apiRequest<BackendUserDetail>('/usuarios', {

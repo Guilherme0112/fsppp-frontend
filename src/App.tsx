@@ -22,6 +22,11 @@ const queryClient = new QueryClient({
 const MainAppContent: React.FC = () => {
   const { isAuthenticated, hasPermission } = useAuth();
   const { activeModule } = useApp();
+  const podeAcessarCompras =
+    hasPermission('solicitacoes.criar') ||
+    hasPermission('solicitacoes.ver-todas') ||
+    hasPermission('solicitacoes.aprovar') ||
+    hasPermission('solicitacoes.concluir');
 
   if (!isAuthenticated) {
     return <LoginView />;
@@ -31,7 +36,7 @@ const MainAppContent: React.FC = () => {
     <AppLayout>
       {activeModule === 'tasks' && hasPermission('quadros.listar') && <TasksView />}
       {activeModule === 'users' && hasPermission('usuario.listar') && <UsersView />}
-      {activeModule === 'pagamentos' && hasPermission('solicitacoes.criar') && <ListaSolicitacoes />}
+      {activeModule === 'compras' && podeAcessarCompras && <ListaSolicitacoes />}
     </AppLayout>
   );
 };

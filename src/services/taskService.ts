@@ -1,4 +1,5 @@
 import { apiRequest } from './apiClient';
+import { SharedUserWithRole } from './boardService';
 
 export interface BackendTask {
   id: number;
@@ -94,4 +95,11 @@ export const taskService = {
     apiRequest<void>(`/tarefas/${id}`, {
       method: 'DELETE',
     }),
+  share: (id: number, userId: number) =>
+    apiRequest<{ mensagem: string }>(`/tarefas/${id}/compartilhar`, {
+      method: 'POST',
+      body: JSON.stringify({ usuario_id: userId }),
+    }),
+  listSharedUsers: (id: number) =>
+    apiRequest<SharedUserWithRole[]>(`/tarefas/${id}/usuarios-compartilhados`),
 };

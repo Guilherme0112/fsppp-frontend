@@ -14,6 +14,13 @@ export interface BackendStatus {
   quadro_id: number;
 }
 
+export interface SharedUserWithRole {
+  id: number;
+  nome: string;
+  email: string;
+  tipo: string;
+}
+
 export const boardService = {
   list: async (): Promise<BackendBoard[]> => {
     const res = await apiRequest<any>('/quadros');
@@ -35,6 +42,18 @@ export const boardService = {
     apiRequest<void>(`/quadros/${id}`, {
       method: 'DELETE',
     }),
+  share: (id: number, userId: number) =>
+    apiRequest<{ mensagem: string }>(`/quadros/${id}/compartilhar`, {
+      method: 'POST',
+      body: JSON.stringify({ usuario_id: userId }),
+    }),
+  listShareUsers: (page: number = 1, perPage: number = 10, search?: string) => {
+    const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    if (search) params.append('search', search);
+    return apiRequest<{ data: { id: number; nome: string; email?: string }[]; current_page: number; last_page: number }>(`/quadros/usuarios-compartilhamento?${params.toString()}`);
+  },
+  listSharedUsers: (id: number) =>
+    apiRequest<SharedUserWithRole[]>(`/quadros/${id}/usuarios-compartilhados`),
 };
 
 export const statusService = {
