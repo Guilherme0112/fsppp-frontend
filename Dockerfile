@@ -2,10 +2,10 @@
 
 # ---------------------------------------------------------------------------
 # Frontend React + Vite — build estático servido por nginx
-# pronto para PaaS (Render/Railway/Fly)
+# pronto para PaaS (Railway; mantenha o Target Port 8080 no domínio)
 #
 # VITE_API_URL é embutida no bundle em tempo de build:
-#   docker build --build-arg VITE_API_URL=https://api.seudominio.com/api/v1 \
+#   docker build --build-arg VITE_API_URL=https://seudominio.up.railway.app/api/v1 \
 #     -t fsppp-frontend ./fsppp-frontend
 #
 # Run:
@@ -30,14 +30,12 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 
-# O PaaS injeta PORT (default 8080 para Fly.io/local); nginx usa template
-# com envsubst e escuta em ${PORT}
-ENV PORT=8080
-
+# O app escuta na porta fixa 8080 (a Railway roteia o domínio para o Target
+# Port configurado — mantenha o Target Port como 8080 no painel).
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -q -O /dev/null "http://127.0.0.1:${PORT}/" || exit 1
+    CMD wget -q -O /dev/null "http://127.0.0.1:8080/" || exit 1
