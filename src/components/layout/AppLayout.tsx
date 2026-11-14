@@ -105,7 +105,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         <Toolbar sx={{ justifyContent: 'space-between', px: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               <div>
-                <img src="./public/icon-fsppp.png" width="120" />
+                <img src={`${import.meta.env.BASE_URL}icon-fsppp.png`} alt="FSPPP" width="120" />
               </div>
           </Box>
 
